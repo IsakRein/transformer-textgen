@@ -277,6 +277,7 @@ def train_rnn():
 
             # Forward pass
             A, H, P = forward_pass(rnn, hprev, X, Y)
+            
             # Backward pass
             grads = compute_grads(rnn, X, Y, A, H, P)
 

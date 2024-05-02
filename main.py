@@ -17,8 +17,6 @@ class RNN(nn.Module):
         self.U = nn.Linear(input_size, hidden_size, dtype=float, bias=True)
         self.W = nn.Linear(hidden_size, hidden_size, dtype=float, bias=True)
         self.V = nn.Linear(hidden_size, output_size, dtype=float, bias=True)
-        # self.b = nn.Parameter(torch.zeros((1, hidden_size), dtype=float))
-        # self.c = nn.Parameter(torch.zeros((1, output_size), dtype=float))
 
         # Initialize weights using normal distribution scaled by 0.01
         nn.init.normal_(self.U.weight, std=0.01)
@@ -30,12 +28,14 @@ class RNN(nn.Module):
         nn.init.zeros_(self.W.bias)
         nn.init.zeros_(self.V.bias)
 
-        self.softmax = nn.LogSoftmax(dim=1)
-
     def forward(self, input, hidden):
-        hidden = torch.tanh(self.U(input) + self.W(hidden))
-        output = self.V(hidden)
-        output = self.softmax(output)
+        batch_size = input.size(0)
+        output = torch.zeros((batch_size, self.input_size), dtype=torch.float)
+
+        for i in range(batch_size):
+            hidden = torch.tanh(self.U(input[i]) + self.W(hidden))
+            output[i, :] = torch.log_softmax(self.V(hidden), dim=1)
+
         return output, hidden
 
     def initHidden(self):
@@ -84,17 +84,17 @@ def train_rnn():
     K = len(book_chars)
 
     # TODO: Behöver en lägre lr än i min egen implementation.
-    # Gissar att adagrad är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
-    eta = 0.0001
+    # Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
     m = 100
+    eta = 0.001
     gamma = 0.9
     seq_length = 25
     rnn = RNN(K, m, K)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
-    
+
     # TODO: Undersök om detta är korrekt.
-    optimizer = optim.RMSprop(rnn.parameters(), lr=eta, alpha=gamma)
+    optimizer = optim.RMSprop(rnn.parameters(), lr=eta)
 
     smooth_loss = None
 
@@ -134,8 +134,10 @@ def train_rnn():
             hidden = hidden.detach()
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(rnn.parameters(), max_norm=5)
+            torch.nn.utils.clip_grad_norm_(rnn.parameters(), 0.001)
             optimizer.step()
+
+            hidden
 
             if smooth_loss is None:
                 smooth_loss = loss
