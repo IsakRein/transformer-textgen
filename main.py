@@ -92,7 +92,9 @@ def train_rnn():
     rnn = RNN(K, m, K)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
-    optimizer = optim.RMSprop(rnn.parameters(), lr=eta, momentum=gamma)
+    
+    # TODO: Undersök om detta är korrekt.
+    optimizer = optim.RMSprop(rnn.parameters(), lr=eta, alpha=gamma)
 
     smooth_loss = None
 
