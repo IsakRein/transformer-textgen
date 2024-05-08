@@ -33,7 +33,7 @@ def load_data(filepath):
     return np.array(list(data))
 
 
-def synthesize(model, hprev, x0, n):
+def synthesize(model, hprev, x0, n, temperature):
     h_t = hprev
     x_t = x0
     
@@ -43,7 +43,7 @@ def synthesize(model, hprev, x0, n):
         output, h_t = model(x_t, h_t)
         p_t = output.detach().numpy()
         p_t = p_t.flatten()
-        p_t = np.exp(p_t)
+        p_t = np.exp(p_t / temperature)
         p_t = p_t / np.sum(p_t)
 
         # generate x_t
@@ -93,7 +93,7 @@ def get_loss(output, Y, batch_size, seq_length, K, criterion):
     return loss
 
 
-def train_model():
+def train_model(eta, batch_size, num_layers, hidden_layer_size, temperature):
     torch.manual_seed(0)
     book_data = load_data('data/goblet_book.txt')
     book_chars = np.unique(book_data)
@@ -107,12 +107,12 @@ def train_model():
 
     # TODO: Behöver en lägre lr än i min egen implementation.
     # Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
-    m = 100
-    eta = 0.001
+    
+    
     gamma = 0.9
     seq_length = 25
-    num_layers = 2
-    model = CharLSTM(K, m, K, num_layers)
+    
+    model = CharLSTM(K, hidden_layer_size, K, num_layers)
 
     criterion = nn.CrossEntropyLoss(reduction='none')
 
@@ -128,9 +128,6 @@ def train_model():
 
     iteration = 0
     epoch = 1
-
-    temp = 0
-    batch_size = 3
 
     torch.rand
     while epoch <= 3:
@@ -172,8 +169,8 @@ def train_model():
                 smooth_val_loss = 0.999 * smooth_val_loss + 0.001 * val_loss
 
             if (iteration) % 100 == 0:
-                losses.append(loss)
-                val_losses.append(val_loss)
+                losses.append(smooth_loss)
+                val_losses.append(smooth_val_loss)
                 iterations.append(iteration)
 
             if (iteration) % 1000 == 0:
@@ -184,7 +181,7 @@ def train_model():
                 x0 = torch.zeros(1,1,K)
                 x0[0,0,np.random.randint(K)] = 1
                 hprev = model.init_hidden(num_layers, 1)
-                Y_synth = synthesize(model, hprev, x0, 200)
+                Y_synth = synthesize(model, hprev, x0, 200, temperature)
 
                 txt = ''.join([ind_to_char[torch.argmax(y).item()]
                               for y in Y_synth])
@@ -194,8 +191,43 @@ def train_model():
             iteration += 1
         epoch += 1
 
-    return smooth_loss
+    return losses, val_losses
 
 
 if __name__ == '__main__':
-    train_model()
+    learning_rates = [0.1,0.01,0.001]
+    batch_sizes = [1,64,128]
+    num_layers = [1,2]
+    hidden_layer_size = [64, 128, 256]
+    temperatures = [0.3, 0.6, 1]
+
+    # default values
+    eta = 0.001
+    batch_size = 1
+    layers = 1
+    m = 100
+    temp = 1
+
+    # Train an RNN baseline on the dataset you use and compare at least to both a one and two layer LSTM both qualitatively and quantitatively
+    train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=1, hidden_layer_size=m, temperature=temp)
+    np.save("Train_loss_one_layer.npy", np.array(train_loss_values))
+    np.save("Val_loss_one_layer.npy", np.array(val_loss_values))
+    train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=2, hidden_layer_size=m, temperature=temp)
+    np.save("Train_loss_two_layers.npy", np.array(train_loss_values))
+    np.save("Val_loss_two_layers.npy", np.array(val_loss_values))
+    
+    # Investigate how increasing the number of the nodes of the hidden state increases or decreases performance.
+    for size in hidden_layer_size:
+        train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
+        np.save(f"Train loss hidden_size={size}.npy", np.array(train_loss_values))
+        np.save(f"Val loss hidden size={size}.npy", np.array(val_loss_values))
+
+    # Investigate the influence of different training parameters such as batch size and learning rate. 
+    # You can for example perform a grid search or random search to find the optimal training parameters.
+    for eta in learning_rates:
+        for batch_size in batch_sizes:
+            train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
+            np.save(f"Train eta={eta} batch_size={batch_size}.npy", np.array(train_loss_values))
+            np.save(f"Val eta={eta} batch_size={batch_size}.npy", np.array(val_loss_values))
+    
+   
