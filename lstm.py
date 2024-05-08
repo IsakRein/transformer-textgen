@@ -59,6 +59,40 @@ def synthesize(model, hprev, x0, n):
 
     return Y
 
+def split_data(book_data):
+    train_size = 0.8
+    val_size = 0.1
+    test_size = 0.1
+    split_idx_1 = int(train_size*len(book_data))
+    split_idx_2 = int((train_size + val_size) *len(book_data))
+    train_data = book_data[:split_idx_1]
+    val_data = book_data[split_idx_1:split_idx_2]
+    test_data = book_data[split_idx_2:]
+    return train_data, val_data, test_data
+
+def get_seq(data, seq_length, K, batch_size, idx, char_to_ind):
+    X = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
+    Y = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
+
+    for batch in range(batch_size):
+        X_chars = data[idx:idx+seq_length]
+        Y_chars = data[idx+1:idx+seq_length+1]
+        # One-hot encode inputs and outputs
+        for t, (x_char, y_char) in enumerate(zip(X_chars, Y_chars)):
+            X[batch,t, char_to_ind[x_char]] = 1
+            Y[batch,t, char_to_ind[y_char]] = 1
+
+    return X, Y
+
+def get_loss(output, Y, batch_size, seq_length, K, criterion):
+    unbatched_output = torch.reshape(output, (batch_size * seq_length,K))
+    unbatched_output_Y = torch.reshape(Y, (batch_size * seq_length,K))
+    # Backward pass
+    loss = criterion(unbatched_output, unbatched_output_Y)
+    loss = torch.sum(loss) / batch_size
+    return loss
+
+
 def train_model():
     torch.manual_seed(0)
     book_data = load_data('data/goblet_book.txt')
@@ -66,6 +100,8 @@ def train_model():
     char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
     ind_to_char = {idx: char for idx,
                    char in enumerate(book_chars)}
+
+    train_data, val_data, test_data = split_data(book_data)
 
     K = len(book_chars)
 
@@ -84,8 +120,10 @@ def train_model():
     optimizer = optim.RMSprop(model.parameters(), lr=eta)
 
     smooth_loss = None
+    smooth_val_loss = None
 
     losses = []
+    val_losses = []
     iterations = []
 
     iteration = 0
@@ -102,32 +140,23 @@ def train_model():
         model.zero_grad()
         hidden = model.init_hidden(num_layers, batch_size)
         
-        
-        for i in range(0, len(book_data) - (seq_length + batch_size - 1), seq_length + batch_size - 1):
+        for i in range(0, len(train_data) - (seq_length + batch_size - 1), seq_length + batch_size - 1):
             # Prepare inputs and targets
             
-            X = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
-            Y = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
-
-            for batch in range(batch_size):
-                X_chars = book_data[i:i+seq_length]
-                Y_chars = book_data[i+1:i+seq_length+1]
-                # One-hot encode inputs and outputs
-                for t, (x_char, y_char) in enumerate(zip(X_chars, Y_chars)):
-                    X[batch,t, char_to_ind[x_char]] = 1
-                    Y[batch,t, char_to_ind[y_char]] = 1
-
-
+            X, Y = get_seq(train_data, seq_length, K, batch_size, i, char_to_ind)
 
             # Forward pass
             output, hidden = model(X, hidden)
-            # print("output shape", output.shape)
-            unbatched_output = torch.reshape(output, (batch_size * seq_length,K))
-            unbatched_output_Y = torch.reshape(Y, (batch_size * seq_length,K))
-            # Backward pass
-            loss = criterion(unbatched_output, unbatched_output_Y)
             
-            loss = torch.sum(loss) / batch_size
+            loss = get_loss(output, Y, batch_size, seq_length, K, criterion)
+
+            # get validation loss
+            max_val_idx = len(val_data) - (seq_length + batch_size - 1)
+            X_val, Y_val = get_seq(val_data, seq_length, K, batch_size,np.random.randint(max_val_idx),char_to_ind)
+            hiddden_val = model.init_hidden(num_layers, batch_size)
+            output_val, _ = model(X_val, hiddden_val)
+            val_loss = get_loss(output_val, Y_val, batch_size, seq_length, K, criterion)
+
             # print(loss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.001)
@@ -137,15 +166,18 @@ def train_model():
 
             if smooth_loss is None:
                 smooth_loss = loss
+                smooth_val_loss = val_loss
             else:
                 smooth_loss = 0.999 * smooth_loss + 0.001 * loss
+                smooth_val_loss = 0.999 * smooth_val_loss + 0.001 * val_loss
 
             if (iteration) % 100 == 0:
                 losses.append(loss)
+                val_losses.append(val_loss)
                 iterations.append(iteration)
 
             if (iteration) % 1000 == 0:
-                print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
+                print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}'  )
 
             if iteration % 10000 == 0:
                
