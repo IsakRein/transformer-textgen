@@ -22,8 +22,8 @@ class CharLSTM(nn.Module):
         
         return out, hidden
     
-    def init_hidden(self):
-        hidden = (torch.zeros((1, 1, self.hidden_size)), torch.zeros((1, 1, self.hidden_size)))
+    def init_hidden(self, num_layers, batch_size):
+        hidden = (torch.zeros((num_layers, batch_size, self.hidden_size)), torch.zeros((num_layers, batch_size, self.hidden_size)))
         return hidden
 
 
@@ -75,10 +75,10 @@ def train_model():
     eta = 0.001
     gamma = 0.9
     seq_length = 25
-    num_layers = 1
+    num_layers = 2
     model = CharLSTM(K, m, K, num_layers)
 
-    criterion = nn.CrossEntropyLoss(reduction='sum')
+    criterion = nn.CrossEntropyLoss(reduction='none')
 
     # TODO: Undersök om detta är korrekt.
     optimizer = optim.RMSprop(model.parameters(), lr=eta)
@@ -92,7 +92,7 @@ def train_model():
     epoch = 1
 
     temp = 0
-    batch_size = 1
+    batch_size = 3
 
     torch.rand
     while epoch <= 3:
@@ -100,34 +100,40 @@ def train_model():
         print(f'Epoch {epoch}')
 
         model.zero_grad()
-        hidden = model.init_hidden()
+        hidden = model.init_hidden(num_layers, batch_size)
         
         
-        for i in range(0, len(book_data) - seq_length, seq_length):
+        for i in range(0, len(book_data) - (seq_length + batch_size - 1), seq_length + batch_size - 1):
             # Prepare inputs and targets
-            X_chars = book_data[i:i+seq_length]
-            Y_chars = book_data[i+1:i+seq_length+1]
+            
+            X = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
+            Y = torch.zeros((batch_size,seq_length, K), dtype=torch.float32)
 
-            X = torch.zeros((1,seq_length, K), dtype=torch.float32)
-            Y = torch.zeros((seq_length, K), dtype=torch.float32)
+            for batch in range(batch_size):
+                X_chars = book_data[i:i+seq_length]
+                Y_chars = book_data[i+1:i+seq_length+1]
+                # One-hot encode inputs and outputs
+                for t, (x_char, y_char) in enumerate(zip(X_chars, Y_chars)):
+                    X[batch,t, char_to_ind[x_char]] = 1
+                    Y[batch,t, char_to_ind[y_char]] = 1
 
-            # One-hot encode inputs and outputs
-            # TODO make compatible with larger batches?
-            for t, (x_char, y_char) in enumerate(zip(X_chars, Y_chars)):
-                X[0,t, char_to_ind[x_char]] = 1
-                Y[t, char_to_ind[y_char]] = 1
+
 
             # Forward pass
             output, hidden = model(X, hidden)
-            unbatched_output = torch.reshape(output, (seq_length,K))
-            
+            # print("output shape", output.shape)
+            unbatched_output = torch.reshape(output, (batch_size * seq_length,K))
+            unbatched_output_Y = torch.reshape(Y, (batch_size * seq_length,K))
             # Backward pass
-            loss = criterion(unbatched_output, Y)
+            loss = criterion(unbatched_output, unbatched_output_Y)
+            
+            loss = torch.sum(loss) / batch_size
+            # print(loss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.001)
             optimizer.step()
             hidden = (hidden[0].detach(), hidden[1].detach())
-    
+            
 
             if smooth_loss is None:
                 smooth_loss = loss
@@ -145,7 +151,7 @@ def train_model():
                
                 x0 = torch.zeros(1,1,K)
                 x0[0,0,np.random.randint(K)] = 1
-                hprev = model.init_hidden()
+                hprev = model.init_hidden(num_layers, 1)
                 Y_synth = synthesize(model, hprev, x0, 200)
 
                 txt = ''.join([ind_to_char[torch.argmax(y).item()]
