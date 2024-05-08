@@ -1,6 +1,9 @@
 from gensim.test.utils import common_texts
-from gensim.models import Word2Vec
+from gensim.models import Word2Vec, KeyedVectors
+import gensim
+import gensim.downloader as api
 import re 
+import numpy as np
 
 def process_raw_text_file(path):
     def remove_punctuation(lst):
@@ -21,12 +24,25 @@ def process_raw_text_file(path):
 
         return non_empty_word_sentences
 
+# Taken from https://stackoverflow.com/questions/952914/how-do-i-make-a-flat-list-out-of-a-list-of-lists
+def flatten(xss):
+    return [x for xs in xss for x in xs]
+
+vector_size = 2000
+
 sentences = process_raw_text_file("goblet_book.txt")
-print(sentences)
-model = Word2Vec(sentences=sentences, vector_size=100, window=5, min_count=1, workers=4)
+model = Word2Vec(sentences=sentences, vector_size=vector_size, min_count=1, workers=4)
+
 model.save("word2vec.model")
 
-model = Word2Vec.load("word2vec.model")
+words = flatten(sentences)
 
-print(model.wv.most_similar(positive=["scar", "boy"], negative=[]))
+word_vectors = np.zeros((vector_size, len(words)))
+for i, word in enumerate(words):
+    print("word", word)
+    word_vectors[:, i] = model.wv[word]
+
+np.save("word_vectors.npy", word_vectors)
+np.save("words.npy", np.array(words))
+
 

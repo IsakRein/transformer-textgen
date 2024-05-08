@@ -6,7 +6,7 @@ import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
-
+from gensim.models import Word2Vec
 
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -41,12 +41,17 @@ class RNN(nn.Module):
     def initHidden(self):
         return torch.zeros(1, self.hidden_size, dtype=float)
 
+def load_word2vec(model_path, word2vec_path, words_path):
+    model = Word2Vec.load(model_path)
+    word2vec = np.load(word2vec_path)
+    words = np.load(words_path)
+    # Return model, word vectors, and a list of all words in chronological order
+    return model, word2vec, words
 
 def load_data(filepath):
     with open(filepath, 'r') as f:
-        data = f.read()
+         data = f.read()
     return np.array(list(data))
-
 
 def synthesize(rnn, hprev, x0, n):
     h_t = hprev
@@ -69,13 +74,107 @@ def synthesize(rnn, hprev, x0, n):
         Y[t, ii] = 1
         x_t = torch.zeros_like(x0)
         x_t[0, ii] = 1
-
     return Y
+
+
+def test_word2vec_seq(model, word2vec_data, words):
+    for i in range(len(words)):
+        assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
+
+def train_rnn_word2vec():
+    torch.manual_seed(0)
+    # model is the gensim model
+    # word2vec is a (K, n) numpy array where K is the number of datapoints for each
+    # word and n is the number of words
+    # words is the corpus split into words
+    model, word2vec, words = load_word2vec("word_embeddings/word2vec.model", \
+                                           "word_embeddings/word_vectors.npy", \
+                                            "word_embeddings/words.npy")
+    test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
+    
+    
+    # Dimension of word vector
+    K = word2vec.shape[0]
+    num_words = word2vec.shape[1]
+
+    # TODO: Behöver en lägre lr än i min egen implementation.
+    # Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
+    m = 100
+    eta = 0.001
+    gamma = 0.9
+    seq_length = 25
+    rnn = RNN(K, m, K)
+
+    criterion = nn.CrossEntropyLoss(reduction='sum')
+
+    # TODO: Undersök om detta är korrekt.
+    optimizer = optim.RMSprop(rnn.parameters(), lr=eta)
+
+    smooth_loss = None
+
+    losses = []
+    iterations = []
+
+    iteration = 0
+    epoch = 1
+
+    temp = 0
+    while epoch <= 3:
+        print(f'-------------')
+        print(f'Epoch {epoch}')
+
+        rnn.zero_grad()
+        hidden = rnn.initHidden()
+        for i in range(0, num_words - seq_length, seq_length):
+            # Prepare inputs and targets
+            X = word2vec[:, i:i+25].T
+            Y = word2vec[:, i+1:i+26].T
+            X = torch.from_numpy(X)
+            Y = torch.from_numpy(Y)
+
+            # Forward pass
+            output, hidden = rnn(X, hidden)
+
+            # Backward pass
+            loss = criterion(output, Y)
+
+            # TODO: Undersök detta. Tror konsekvensen är att vi inte backpropagar genom hidden state.
+            hidden = hidden.detach()
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(rnn.parameters(), 0.001)
+            optimizer.step()
+
+            hidden
+
+            if smooth_loss is None:
+                smooth_loss = loss
+            else:
+                smooth_loss = 0.999 * smooth_loss + 0.001 * loss
+
+            if (iteration) % 100 == 0:
+                losses.append(loss)
+                iterations.append(iteration)
+
+            if (iteration) % 1000 == 0:
+                print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
+
+            if iteration % 10000 == 0:
+                x0 = X[0, :].reshape(1, -1)
+                hprev = rnn.initHidden()
+                Y_synth = synthesize(rnn, hprev, x0, 200)
+                txt = " ".join([words[torch.argmax(y).item()] for y in Y_synth])
+                print(txt)
+
+            iteration += 1
+        epoch += 1
+
+    return smooth_loss
 
 
 def train_rnn():
     torch.manual_seed(0)
-    book_data = load_data('data/goblet_book.txt')
+    book_data = load_data('word_embeddings/goblet_book.txt')
     book_chars = np.unique(book_data)
     char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
     ind_to_char = {idx: char for idx,
@@ -149,8 +248,7 @@ def train_rnn():
                 iterations.append(iteration)
 
             if (iteration) % 1000 == 0:
-                print(f'Iter {iteration:7d}. Smooth loss {
-                      smooth_loss:7.2f}. Loss {loss:7.2f}.')
+                print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
 
             if iteration % 10000 == 0:
                 x0 = X[0, :].reshape(1, -1)
@@ -169,4 +267,5 @@ def train_rnn():
 
 
 if __name__ == '__main__':
-    train_rnn()
+    #train_rnn()
+    train_rnn_word2vec()
