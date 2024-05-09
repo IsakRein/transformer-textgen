@@ -36,13 +36,15 @@ model = Word2Vec(sentences=sentences, vector_size=vector_size, min_count=1, work
 model.save("word2vec.model")
 
 words = flatten(sentences)
-
+word_set = list(set(words))
 word_vectors = np.zeros((vector_size, len(words)))
+
 for i, word in enumerate(words):
-    print("word", word)
     word_vectors[:, i] = model.wv[word]
 
 np.save("word_vectors.npy", word_vectors)
 np.save("words.npy", np.array(words))
+np.save("word_set", np.array(word_set))
+
 
 

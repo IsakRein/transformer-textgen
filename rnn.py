@@ -13,6 +13,7 @@ class RNN(nn.Module):
         super(RNN, self).__init__()
         self.hidden_size = hidden_size
         self.input_size = input_size
+        self.output_size = output_size
 
         self.U = nn.Linear(input_size, hidden_size, dtype=float, bias=True)
         self.W = nn.Linear(hidden_size, hidden_size, dtype=float, bias=True)
@@ -30,8 +31,7 @@ class RNN(nn.Module):
 
     def forward(self, input, hidden):
         batch_size = input.size(0)
-        output = torch.zeros((batch_size, self.input_size), dtype=torch.float)
-
+        output = torch.zeros((batch_size, self.output_size), dtype=torch.float)
         for i in range(batch_size):
             hidden = torch.tanh(self.U(input[i]) + self.W(hidden))
             output[i, :] = torch.log_softmax(self.V(hidden), dim=1)
@@ -41,17 +41,48 @@ class RNN(nn.Module):
     def initHidden(self):
         return torch.zeros(1, self.hidden_size, dtype=float)
 
-def load_word2vec(model_path, word2vec_path, words_path):
-    model = Word2Vec.load(model_path)
-    word2vec = np.load(word2vec_path)
-    words = np.load(words_path)
-    # Return model, word vectors, and a list of all words in chronological order
-    return model, word2vec, words
+def load_word2vec():
+    # The gensim model.
+    model = Word2Vec.load("word_embeddings/word2vec.model")
+    
+    # K x N numpy array where K is the number of features for a word and N is the number of words in the corpus.
+    word2vec = np.load("word_embeddings/word_vectors.npy")
+
+    # List of all words that appear in chronological order.
+    words = np.load("word_embeddings/words.npy")
+
+    # Set of all unique words in the corpus. Is actually list(set) so it supports indexing.
+    word_set = np.load("word_embeddings/word_set.npy")
+    return model, word2vec, words, word_set
 
 def load_data(filepath):
     with open(filepath, 'r') as f:
          data = f.read()
     return np.array(list(data))
+
+def synthesize_word2vec(rnn, hprev, x0, n, word_set, model):
+    h_t = hprev
+    x_t = x0
+    Y = [""] * n
+    
+    for t in range(n):
+        output, h_t = rnn(x_t, h_t)
+        p_t = output.detach().numpy()
+        p_t = np.exp(p_t)
+        p_t = p_t / np.sum(p_t)
+
+        # generate x_t
+        cp = np.cumsum(p_t)
+        a = np.random.rand()
+        ixs = np.where(cp - a > 0)[0]
+        ii = ixs[0]
+        word_vec = model.wv[word_set[ii]]
+
+        # Update Y and x_t for next iteration
+        Y[t] = word_set[ii]
+        x_t = torch.reshape(torch.from_numpy(word_vec), (1, 2000))
+        x_t = x_t.double()
+    return Y
 
 def synthesize(rnn, hprev, x0, n):
     h_t = hprev
@@ -81,21 +112,25 @@ def test_word2vec_seq(model, word2vec_data, words):
     for i in range(len(words)):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
 
+def construct_Y(start_index, end_index, words, word_set, seq_length):
+    Y = torch.zeros(seq_length, dtype=torch.long)
+    i = 0
+    for j in range(start_index, end_index):
+        indices = np.where(word_set == words[j])
+        assert indices[0].size == 1
+        Y[i] = indices[0][0]
+        i += 1
+    return Y
+
 def train_rnn_word2vec():
     torch.manual_seed(0)
-    # model is the gensim model
-    # word2vec is a (K, n) numpy array where K is the number of datapoints for each
-    # word and n is the number of words
-    # words is the corpus split into words
-    model, word2vec, words = load_word2vec("word_embeddings/word2vec.model", \
-                                           "word_embeddings/word_vectors.npy", \
-                                            "word_embeddings/words.npy")
+    model, word2vec, words, word_set = load_word2vec()
     test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
-    
     
     # Dimension of word vector
     K = word2vec.shape[0]
     num_words = word2vec.shape[1]
+    output_size = word_set.shape[0]
 
     # TODO: Behöver en lägre lr än i min egen implementation.
     # Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
@@ -103,7 +138,7 @@ def train_rnn_word2vec():
     eta = 0.001
     gamma = 0.9
     seq_length = 25
-    rnn = RNN(K, m, K)
+    rnn = RNN(K, m, output_size)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
 
@@ -128,9 +163,8 @@ def train_rnn_word2vec():
         for i in range(0, num_words - seq_length, seq_length):
             # Prepare inputs and targets
             X = word2vec[:, i:i+25].T
-            Y = word2vec[:, i+1:i+26].T
             X = torch.from_numpy(X)
-            Y = torch.from_numpy(Y)
+            Y = construct_Y(start_index=i+1, end_index=i+26, words=words, word_set=word_set, seq_length=seq_length)
 
             # Forward pass
             output, hidden = rnn(X, hidden)
@@ -159,11 +193,11 @@ def train_rnn_word2vec():
             if (iteration) % 1000 == 0:
                 print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
 
-            if iteration % 10000 == 0:
+            if iteration % 1000 == 0:
                 x0 = X[0, :].reshape(1, -1)
                 hprev = rnn.initHidden()
-                Y_synth = synthesize(rnn, hprev, x0, 200)
-                txt = " ".join([words[torch.argmax(y).item()] for y in Y_synth])
+                Y_synth = synthesize_word2vec(rnn, hprev, x0, 20, word_set, model)
+                txt = " ".join(Y_synth)
                 print(txt)
 
             iteration += 1
