@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
 from gensim.models import Word2Vec
+import pickle
 
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -35,25 +36,35 @@ class RNN(nn.Module):
         for i in range(batch_size):
             hidden = torch.tanh(self.U(input[i]) + self.W(hidden))
             output[i, :] = torch.log_softmax(self.V(hidden), dim=1)
-
         return output, hidden
 
     def initHidden(self):
         return torch.zeros(1, self.hidden_size, dtype=float)
 
-def load_word2vec():
+def load_word2vec(use_fewer_dimensions=False):
+    if use_fewer_dimensions:
+        model_path = "word_embeddings/word2vec_80.model"
+        word2vec_path = "word_embeddings/word_vectors_80.npy"
+    else:
+        model_path = "word_embeddings/word2vec.model"
+        word2vec_path = "word_embeddings/word_vectors.npy"
     # The gensim model.
-    model = Word2Vec.load("word_embeddings/word2vec.model")
+    model = Word2Vec.load(model_path)
     
     # K x N numpy array where K is the number of features for a word and N is the number of words in the corpus.
-    word2vec = np.load("word_embeddings/word_vectors.npy")
+    word2vec = np.load(word2vec_path)
 
     # List of all words that appear in chronological order.
     words = np.load("word_embeddings/words.npy")
 
     # Set of all unique words in the corpus. Is actually list(set) so it supports indexing.
     word_set = np.load("word_embeddings/word_set.npy")
-    return model, word2vec, words, word_set
+
+    # Keypairs of words in word_set and their index in word_set
+    with open("word_embeddings/word_to_index.pkl", "rb") as f:
+        word_to_index = pickle.load(f)
+
+    return model, word2vec, words, word_set, word_to_index
 
 def load_data(filepath):
     with open(filepath, 'r') as f:
@@ -80,7 +91,8 @@ def synthesize_word2vec(rnn, hprev, x0, n, word_set, model):
 
         # Update Y and x_t for next iteration
         Y[t] = word_set[ii]
-        x_t = torch.reshape(torch.from_numpy(word_vec), (1, 2000))
+
+        x_t = torch.reshape(torch.tensor(word_vec), x_t.shape)
         x_t = x_t.double()
     return Y
 
@@ -107,24 +119,22 @@ def synthesize(rnn, hprev, x0, n):
         x_t[0, ii] = 1
     return Y
 
-
 def test_word2vec_seq(model, word2vec_data, words):
     for i in range(len(words)):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
 
-def construct_Y(start_index, end_index, words, word_set, seq_length):
-    Y = torch.zeros(seq_length, dtype=torch.long)
+def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_to_index):
+    Y = torch.zeros((seq_length, word_set.shape[0]))
     i = 0
     for j in range(start_index, end_index):
-        indices = np.where(word_set == words[j])
-        assert indices[0].size == 1
-        Y[i] = indices[0][0]
+        index = word_to_index[words[j]]
+        Y[i, index] = 1
         i += 1
     return Y
 
 def train_rnn_word2vec():
     torch.manual_seed(0)
-    model, word2vec, words, word_set = load_word2vec()
+    model, word2vec, words, word_set, word_to_index = load_word2vec(use_fewer_dimensions=False)
     test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
     
     # Dimension of word vector
@@ -138,6 +148,7 @@ def train_rnn_word2vec():
     eta = 0.001
     gamma = 0.9
     seq_length = 25
+    
     rnn = RNN(K, m, output_size)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
@@ -163,8 +174,8 @@ def train_rnn_word2vec():
         for i in range(0, num_words - seq_length, seq_length):
             # Prepare inputs and targets
             X = word2vec[:, i:i+25].T
-            X = torch.from_numpy(X)
-            Y = construct_Y(start_index=i+1, end_index=i+26, words=words, word_set=word_set, seq_length=seq_length)
+            X = torch.tensor(X)
+            Y = construct_Y_batch(start_index=i+1, end_index=i+26, words=words, word_set=word_set, seq_length=seq_length, word_to_index=word_to_index)
 
             # Forward pass
             output, hidden = rnn(X, hidden)
