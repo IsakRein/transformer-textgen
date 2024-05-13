@@ -4,7 +4,9 @@ import numpy as np
 import torch.optim as optim
 import time
 
+# Setting device to GPU if available, else CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f'Using device: {device}')
 
 
 class CharLSTM(nn.Module):
@@ -189,7 +191,8 @@ def train_model(eta, batch_size, num_layers, hidden_layer_size, temperature):
                 minutes = int((deltaTime % 3600) // 60)
                 seconds = int(deltaTime % 60)
                 time_str = f'{hours:02d}:{minutes:02d}:{seconds:02d}'
-                print(f'[{time_str}] Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}')
+                print(f'[{time_str}] Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {
+                      loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}')
 
             if iteration % 10000 == 0:
 
@@ -235,8 +238,7 @@ if __name__ == '__main__':
 
     # Investigate how increasing the number of the nodes of the hidden state increases or decreases performance.
     for size in hidden_layer_size:
-        train_loss_values, val_loss_values = train_model(
-            eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
+        train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
         np.save(f"Train loss hidden_size={size}.npy", np.array(train_loss_values))
         np.save(f"Val loss hidden size={size}.npy", np.array(val_loss_values))
 
@@ -247,4 +249,4 @@ if __name__ == '__main__':
             train_loss_values, val_loss_values = train_model(
                 eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
             np.save(f"Train eta={eta} batch_size={batch_size}.npy", np.array(train_loss_values))
-            np.save(f"Val eta={eta} batch_size={batch_size}.npy", np.array(val_loss_values))
+            np.save(f"Val eta={eta} batch_size={ batch_size}.npy", np.array(val_loss_values))
