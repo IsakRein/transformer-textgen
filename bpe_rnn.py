@@ -83,6 +83,13 @@ def decode(ids, vocab):
   text = tokens.decode("utf-8", errors="replace")
   return text
 
+def visualize_tokens(token_indices, vocab):
+    output_bytes = [vocab[idx] for idx in token_indices]
+    output_bytes = list(map(lambda x : x.decode("utf-8", errors="replace"), output_bytes))
+    print(output_bytes)
+    #for token in token_indices:
+        #print(decode([token]), vocab)
+
 def train_rnn():
     torch.manual_seed(0)
     bytes_list, token_vocabulary = load_bpe()
@@ -167,7 +174,9 @@ def train_rnn():
                 x0 = X[0, :].reshape(1, -1)
                 hprev = rnn.initHidden()
                 Y_synth = synthesize(rnn, hprev, x0, 200)
-                print(decode([torch.argmax(y).item() for y in Y_synth], token_vocabulary))
+                token_indices = [torch.argmax(y).item() for y in Y_synth]
+                visualize_tokens(token_indices, token_vocabulary)
+                #print(decode([torch.argmax(y).item() for y in Y_synth], token_vocabulary))
 
             iteration += 1
         epoch += 1
