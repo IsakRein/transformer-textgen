@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -75,7 +77,7 @@ def synthesize(rnn, hprev, x0, n):
 
 def train_rnn():
     torch.manual_seed(0)
-    book_data = load_data('data/goblet_book.txt')
+    book_data = load_data('sample_data/goblet_book.txt')
     book_chars = np.unique(book_data)
     char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
     ind_to_char = {idx: char for idx,
@@ -149,7 +151,8 @@ def train_rnn():
                 iterations.append(iteration)
 
             if (iteration) % 1000 == 0:
-                print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
+                print(f'Iter {iteration:7d}. Smooth loss {
+                      smooth_loss:7.2f}. Loss {loss:7.2f}.')
 
             if iteration % 10000 == 0:
                 x0 = X[0, :].reshape(1, -1)
