@@ -48,6 +48,17 @@ def load_bpe():
         token_vocabulary = pickle.load(f)
     return byte_list, token_vocabulary
 
+def load_bpe_gpt4():
+    """
+    Loads the GPT4-tokenizer
+    """
+    # byte_list is the entire text encoded into tokens. Se more in bpe.py
+    byte_list = np.load("word_embeddings/encoded_text_gpt4.npy")
+    # token_vocabulary is used to decode tokens to chars
+    with open("word_embeddings/vocabulary_gpt4.pkl", "rb") as f:
+        token_vocabulary = pickle.load(f)
+    return byte_list, token_vocabulary
+
 def load_data(filepath):
     with open(filepath, 'r') as f:
          data = f.read()
@@ -87,17 +98,10 @@ def visualize_tokens(token_indices, vocab):
     output_bytes = [vocab[idx] for idx in token_indices]
     output_bytes = list(map(lambda x : x.decode("utf-8", errors="replace"), output_bytes))
     print(output_bytes)
-    #for token in token_indices:
-        #print(decode([token]), vocab)
 
 def train_rnn():
     torch.manual_seed(0)
-    bytes_list, token_vocabulary = load_bpe()
-    # book_data = load_data('word_embeddings/goblet_book.txt')
-    # book_chars = np.unique(book_data)
-    # char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
-    # ind_to_char = {idx: char for idx,
-    #                char in enumerate(book_chars)}
+    bytes_list, token_vocabulary = load_bpe_gpt4()
 
     K = len(token_vocabulary.keys())
     assert K == 1000
@@ -182,7 +186,6 @@ def train_rnn():
         epoch += 1
 
     return smooth_loss
-
 
 if __name__ == '__main__':
     train_rnn()
