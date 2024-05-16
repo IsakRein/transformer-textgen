@@ -43,14 +43,14 @@ def synthesize(model, hprev, x0, n, temperature):
     x_t = x0.to(device)  # Make sure x0 is on the right device
 
     Y = torch.zeros((n, model.input_size), dtype=torch.float, device=device)
-
+    
     for t in range(n):
         output, h_t = model(x_t, h_t)
         # Move tensor to CPU for numpy operations
         p_t = output.squeeze().detach().cpu().numpy()
         p_t = np.exp(p_t / temperature)
         p_t /= np.sum(p_t)
-
+        
         # Random sampling
         i = np.random.choice(len(p_t), p=p_t)
 
@@ -106,7 +106,7 @@ def get_loss(output, Y, batch_size, seq_length, K, criterion):
 def train_model(eta, batch_size, num_layers, hidden_layer_size, temperature):
     torch.manual_seed(0)
     start_time = time.time()
-    book_data = load_data('sample_data/goblet_book.txt')
+    book_data = load_data('./data/goblet_book.txt')
     book_chars = np.unique(book_data)
     char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
     ind_to_char = {idx: char for idx,
@@ -191,8 +191,7 @@ def train_model(eta, batch_size, num_layers, hidden_layer_size, temperature):
                 minutes = int((deltaTime % 3600) // 60)
                 seconds = int(deltaTime % 60)
                 time_str = f'{hours:02d}:{minutes:02d}:{seconds:02d}'
-                print(f'[{time_str}] Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {
-                      loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}')
+                print(f'[{time_str}] Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}')
 
             if iteration % 10000 == 0:
 
@@ -240,8 +239,7 @@ if __name__ == '__main__':
     for size in hidden_layer_size:
         train_loss_values, val_loss_values = train_model(
             eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-        np.save(f"Train loss hidden_size={
-                size}.npy", np.array(train_loss_values))
+        np.save(f"Train loss hidden_size={size}.npy", np.array(train_loss_values))
         np.save(f"Val loss hidden size={size}.npy", np.array(val_loss_values))
 
     # Investigate the influence of different training parameters such as batch size and learning rate.
@@ -250,7 +248,5 @@ if __name__ == '__main__':
         for batch_size in batch_sizes:
             train_loss_values, val_loss_values = train_model(
                 eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-            np.save(f"Train eta={eta} batch_size={
-                    batch_size}.npy", np.array(train_loss_values))
-            np.save(f"Val eta={eta} batch_size={
-                    batch_size}.npy", np.array(val_loss_values))
+            np.save(f"Train eta={eta} batch_size={batch_size}.npy", np.array(train_loss_values))
+            np.save(f"Val eta={eta} batch_size={batch_size}.npy", np.array(val_loss_values))

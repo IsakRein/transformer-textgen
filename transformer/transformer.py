@@ -121,7 +121,7 @@ class MultiHeadAttentionBlock(nn.Module):
         # Multiply the output matrix by the V matrix, as in the formula
         return (attention_scores @ value)
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor, coder) -> torch.Tensor:
         query = self.W_q(q)  # Q' matrix
         key = self.W_k(k)  # K' matrix
         value = self.W_v(v)  # V' matrix
@@ -129,7 +129,7 @@ class MultiHeadAttentionBlock(nn.Module):
         batch_size = query.shape[0]
         sequence_length = query.shape[1]
 
-        query = query.view(query.shape[0], query.shape[1], self.h, self.d_k).transpose(
+        query = query.view(batch_size, sequence_length, self.h, self.d_k).transpose(
             1, 2)  # Transpose => bring the head to the second dimension
         key = key.view(key.shape[0], key.shape[1], self.h, self.d_k).transpose(
             1, 2)  # Transpose => bring the head to the second dimension
@@ -140,10 +140,10 @@ class MultiHeadAttentionBlock(nn.Module):
         if mask is not None:
             attention = attention.masked_fill(
                 mask == False, torch.tensor(float('-inf')))
-
+        
         x = MultiHeadAttentionBlock.attention(
             query, key, value, mask, self.dropout)
-
+        
         x = x.transpose(1, 2).contiguous().view(
             x.shape[0], -1, self.h * self.d_k)
 
@@ -207,7 +207,7 @@ class EncoderBlock(nn.Module):
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         # TODO: Fixa så att layerNorm är här istället för i ResidualConnection
         x = self.residualConnection1(
-            x, lambda x: self.multiHeadAttentionBlock(x, x, x, mask))
+            x, lambda x: self.multiHeadAttentionBlock(x, x, x, mask, "encoder"))
         # x = self.layerNorm1(x)
         x = self.residualConnection2(x, lambda x: self.mlp(x))
         # x = self.layerNorm2(x)
@@ -242,9 +242,9 @@ class DecoderBlock(nn.Module):
 
     def forward(self, x, encoder_output, src_mask, tgt_mask):
         res = self.residualConnection1(
-            x, lambda x: self.selfAttentionBlock(x, x, x, tgt_mask))
+            x, lambda x: self.selfAttentionBlock(x, x, x, tgt_mask, "decoder"))
         res = self.residualConnection2(
-            res, lambda res: self.crossAttentionBlock(res, encoder_output, encoder_output, src_mask))
+            res, lambda res: self.crossAttentionBlock(res, encoder_output, encoder_output, src_mask, "decoder"))
         res = self.residualConnection3(res, lambda res: self.mlp(res))
 
         return res
@@ -262,7 +262,7 @@ class Decoder(nn.Module):
         for decoderBlock in self.decoderBlocks:
             x = decoderBlock(x, encoder_output, src_mask, tgt_mask)
         x = self.norm(x)
-        projection = torch.log_softmax(self.projection(x), dim=-1)
+        projection = torch.softmax(self.projection(x), dim=-1)
         return projection
 
 
@@ -285,17 +285,17 @@ class Transformer(nn.Module):
 
     def forward(self, X, Y):
         X_mask, Y_mask = self.generate_mask(X, Y)
-
+        
+        
         X = self.positionalEncoding(self.inputEmbedding(X))
         Y = self.positionalEncoding(self.inputEmbedding(Y))
-
         output = self.decoder(Y, self.encoder(X, X_mask), X_mask, Y_mask)
         return output
 
 
 torch.manual_seed(0)
 book_chars, char_to_ind, ind_to_char, encoded_data, K = load_data_from_file(
-    './sample_data/goblet_book.txt')
+    '../data/goblet_book.txt')
 
 
 d_model = 512
@@ -314,6 +314,37 @@ criterion = torch.nn.CrossEntropyLoss(reduction='sum')
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
 iteration = 0
 
+def synthesize(model, n, temperature):
+    x0 = torch.zeros((1, n), dtype=torch.int)
+    x0[0, np.random.randint(n)] = np.random.randint(K)
+    x_t = x0.to(device)  # Make sure x0 is on the right device
+    
+    Y_res = torch.zeros(n, dtype=torch.float, device=device)
+    Dummy_Y = torch.zeros((1, n), dtype=torch.int, device=device)
+    model.eval()
+    print(x0.shape)
+    print(Dummy_Y.shape)
+    with torch.no_grad():
+        for t in range(n):
+            output = model(x_t, Dummy_Y)
+            #Move tensor to CPU for numpy operations
+            p = output.squeeze(0).detach().cpu().numpy()
+            
+            p_t = p[:,t]
+            p_t = np.exp(p_t / temperature)
+            p_t /= np.sum(p_t)
+
+            # Random sampling
+            i = np.random.choice(len(p_t), p=p_t)
+
+            # Update Y and x_t for next iteration
+            Y_res[t] = i
+            x_t = torch.zeros_like(x0, device=device)
+            x_t[0, t] = i
+    txt = ''.join([ind_to_char[y.item()] for y in Y_res])
+    print(txt)
+    model.train()
+    return Y
 
 for epoch in range(1, 10):
     print(f'-------------')
@@ -324,6 +355,7 @@ for epoch in range(1, 10):
     for i in range(0, len(encoded_data) - seq_length, seq_length):
         # Prepare inputs and targets
         X, Y = get_seq(encoded_data, seq_length, batch_size, i, char_to_ind)
+        
         model.zero_grad()
         output = model(X, Y)
 
@@ -338,17 +370,10 @@ for epoch in range(1, 10):
         loss.backward()
         optimizer.step()
 
-        # print("------")
-        # print(output)
-        predicted_text = data_to_text(torch.argmax(
-            output.squeeze(0), axis=1), ind_to_char)
-        print(f'Predicted text:\n {predicted_text}')
-
-        actual_text = data_to_text(Y.squeeze(0), ind_to_char)
-        print(f'Actual text:\n {actual_text}')
-        print("------")
+        
 
         if iteration % 10 == 0:
             print(f'Iteration: {iteration}, Loss: {loss.item()}')
+            synthesize(model, 25, 1)
 
         iteration += 1
