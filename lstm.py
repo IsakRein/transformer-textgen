@@ -238,8 +238,10 @@ if __name__ == '__main__':
 
     # Investigate how increasing the number of the nodes of the hidden state increases or decreases performance.
     for size in hidden_layer_size:
-        train_loss_values, val_loss_values = train_model(eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-        np.save(f"Train loss hidden_size={size}.npy", np.array(train_loss_values))
+        train_loss_values, val_loss_values = train_model(
+            eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
+        np.save(f"Train loss hidden_size={
+                size}.npy", np.array(train_loss_values))
         np.save(f"Val loss hidden size={size}.npy", np.array(val_loss_values))
 
     # Investigate the influence of different training parameters such as batch size and learning rate.
@@ -248,5 +250,7 @@ if __name__ == '__main__':
         for batch_size in batch_sizes:
             train_loss_values, val_loss_values = train_model(
                 eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-            np.save(f"Train eta={eta} batch_size={batch_size}.npy", np.array(train_loss_values))
-            np.save(f"Val eta={eta} batch_size={ batch_size}.npy", np.array(val_loss_values))
+            np.save(f"Train eta={eta} batch_size={
+                    batch_size}.npy", np.array(train_loss_values))
+            np.save(f"Val eta={eta} batch_size={
+                    batch_size}.npy", np.array(val_loss_values))
