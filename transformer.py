@@ -4,7 +4,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-
 class TextProcessor:
     def __init__(self, text):
         self.chars = sorted(list(set(text)))
@@ -22,7 +21,8 @@ class TextProcessor:
         return ''.join([self.itos[i.item()] for i in t])
 
 
-def get_batch(split):
+def get_batch(split, i=None):
+    # TODO: add support for indexed batches (i.e. i is not None)
     data = train_data if split == 'train' else val_data
     idx = torch.randint(
         len(data) - config['block_size'], (config['batch_size'],))
@@ -105,6 +105,8 @@ class DecoderBlock(nn.Module):
         self.norm2 = nn.LayerNorm(config['n_embd'])
 
     def forward(self, X):
+        # TODO: This is a simple way to do residual connections.
+        # Maybe replace with our own for clarity.
         X = X + self.heads(self.norm1(X))
         X = X + self.mlp(self.norm2(X))
         return X
@@ -113,6 +115,7 @@ class DecoderBlock(nn.Module):
 class Transformer(nn.Module):
     def __init__(self):
         super().__init__()
+        # TODO replace with fancier token / position embedding
         self.token_embedding_table = nn.Embedding(
             text_processor.vocab_size, config['n_embd'])
         self.position_embedding_table = nn.Embedding(
@@ -149,6 +152,7 @@ class Transformer(nn.Module):
             loss = F.cross_entropy(logits, Y)
         return logits, loss
 
+    # TODO: Maybe change. Taken from Andrej Karpathy's blog
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
             idx_cond = idx[:, -config['block_size']:]
@@ -180,10 +184,12 @@ val_data = data[n:]
 
 # Initialize model and optimizer
 model = Transformer().to(device)
-optimizer = torch.optim.AdamW(model.parameters(), lr=config['learning_rate'])
+optimizer = torch.optim.AdamW(
+    model.parameters(), lr=config['learning_rate'])
 
 # Training loop
-print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
+print(f"Model has {sum(p.numel()
+                       for p in model.parameters()):,} parameters")
 
 for iter in range(config['max_iters']):
     X_batch, Y_batch = get_batch('train')
@@ -195,7 +201,7 @@ for iter in range(config['max_iters']):
     if iter % config['eval_interval'] == 0 or iter == config['max_iters'] - 1:
         losses = estimate_loss()
         print(f"step {iter}: train loss {
-              losses['train']:.4f}, val loss {losses['val']:.4f}")
+            losses['train']:.4f}, val loss {losses['val']:.4f}")
 
 losses = estimate_loss()
 print(f'Final train loss: {losses['train']:.4f}')
