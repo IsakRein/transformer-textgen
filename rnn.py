@@ -77,7 +77,7 @@ def synthesize(rnn, hprev, x0, n):
 
 def train_rnn():
     torch.manual_seed(0)
-    book_data = load_data('sample_data/goblet_book.txt')
+    book_data = load_data('data/goblet_book.txt')
     book_chars = np.unique(book_data)
     char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
     ind_to_char = {idx: char for idx,
@@ -93,7 +93,7 @@ def train_rnn():
     seq_length = 25
     rnn = RNN(K, m, K)
 
-    criterion = nn.CrossEntropyLoss(reduction='sum')
+    criterion = nn.CrossEntropyLoss(reduction='mean')
 
     # TODO: Undersök om detta är korrekt.
     optimizer = optim.RMSprop(rnn.parameters(), lr=eta)
