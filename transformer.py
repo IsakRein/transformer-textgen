@@ -21,8 +21,7 @@ class TextProcessor:
         return ''.join([self.itos[i.item()] for i in t])
 
 
-def get_batch(split, i=None):
-    # TODO: add support for indexed batches (i.e. i is not None)
+def get_batch(split):
     data = train_data if split == 'train' else val_data
     idx = torch.randint(
         len(data) - config['block_size'], (config['batch_size'],))
@@ -115,7 +114,6 @@ class DecoderBlock(nn.Module):
 class Transformer(nn.Module):
     def __init__(self):
         super().__init__()
-        # TODO replace with fancier token / position embedding
         self.token_embedding_table = nn.Embedding(
             text_processor.vocab_size, config['n_embd'])
         self.position_embedding_table = nn.Embedding(
@@ -136,6 +134,7 @@ class Transformer(nn.Module):
 
     def forward(self, X, Y=None):
         B, T = X.shape
+        # TODO replace with fancier token / position embedding
         token_embeddings = self.token_embedding_table(X)
         position_embeddings = self.position_embedding_table(
             torch.arange(T, device=device))
