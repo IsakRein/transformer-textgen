@@ -99,7 +99,7 @@ def get_loss(output, Y, batch_size, seq_length, K, criterion):
     unbatched_output_Y = torch.reshape(Y, (batch_size * seq_length, K))
     # Backward pass
     loss = criterion(unbatched_output, unbatched_output_Y)
-    loss = torch.sum(loss) / batch_size
+    loss = torch.sum(loss) / batch_size / seq_length
     return loss
 
 
