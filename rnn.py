@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class RNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
@@ -91,7 +93,7 @@ def train_rnn():
     seq_length = 25
     rnn = RNN(K, m, K)
 
-    criterion = nn.CrossEntropyLoss(reduction='sum')
+    criterion = nn.CrossEntropyLoss(reduction='mean')
 
     # TODO: Undersök om detta är korrekt.
     optimizer = optim.RMSprop(rnn.parameters(), lr=eta)
