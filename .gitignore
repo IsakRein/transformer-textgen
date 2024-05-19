@@ -166,3 +166,7 @@ cython_debug/
 .DS_Store
 data/
 sample_data/
+word_embeddings/word2vec*
+bin/
+share/
+pyvenv.cfg
