@@ -170,3 +170,5 @@ word_embeddings/word2vec*
 bin/
 share/
 pyvenv.cfg
+*.npy
+*.pkl
