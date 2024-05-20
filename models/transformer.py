@@ -180,7 +180,6 @@ class DecoderOnlyTransformer(nn.Module):
 
 
     def forward(self, X, Y=None):
-
         token_embeddings = self.embed_tokens(X)
         X = self.positional_encoding(token_embeddings)
         X = self.decoder_blocks(X)

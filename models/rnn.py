@@ -145,6 +145,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # Initialize data
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
+
 if config['tokenizer'] == 'vector':
     model, word2vec, words, word_set, word_to_index = load_word2vec(
         use_fewer_dimensions=False)

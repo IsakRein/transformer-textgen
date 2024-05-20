@@ -1,12 +1,15 @@
 import torch.nn as nn
+import torch.nn.functional as F
 import torch
+import torchvision
+import torchvision.transforms as transforms
+import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
+import pickle
+import sys
+import json
 import time
-
-# Setting device to GPU if available, else CPU
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Using device: {device}')
 
 
 class CharLSTM(nn.Module):
@@ -43,14 +46,14 @@ def synthesize(model, hprev, x0, n, temperature):
     x_t = x0.to(device)  # Make sure x0 is on the right device
 
     Y = torch.zeros((n, model.input_size), dtype=torch.float, device=device)
-    
+
     for t in range(n):
         output, h_t = model(x_t, h_t)
         # Move tensor to CPU for numpy operations
         p_t = output.squeeze().detach().cpu().numpy()
         p_t = np.exp(p_t / temperature)
         p_t /= np.sum(p_t)
-        
+
         # Random sampling
         i = np.random.choice(len(p_t), p=p_t)
 
@@ -63,9 +66,9 @@ def synthesize(model, hprev, x0, n, temperature):
 
 
 def split_data(book_data):
-    train_size = 0.8
-    val_size = 0.1
-    test_size = 0.1
+    train_size = config['train_size']
+    val_size = config['val_size']
+    test_size = config['test_size']
     split_idx_1 = int(train_size*len(book_data))
     split_idx_2 = int((train_size + val_size) * len(book_data))
     train_data = book_data[:split_idx_1]
@@ -75,7 +78,7 @@ def split_data(book_data):
 
 
 def get_seq(data, seq_length, K, batch_size, idx, char_to_ind):
-    X = torch.zeros((batch_size, seq_length, K),
+    X = torch.zeros((batch_size, config['seq_length'], K),
                     dtype=torch.float32, device=device)
     Y = torch.zeros((batch_size, seq_length, K),
                     dtype=torch.float32, device=device)
@@ -103,150 +106,111 @@ def get_loss(output, Y, batch_size, seq_length, K, criterion):
     return loss
 
 
-def train_model(eta, batch_size, num_layers, hidden_layer_size, temperature):
-    torch.manual_seed(0)
-    start_time = time.time()
-    book_data = load_data('./data/goblet_book.txt')
-    book_chars = np.unique(book_data)
-    char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
-    ind_to_char = {idx: char for idx,
-                   char in enumerate(book_chars)}
+# Set seed
+torch.manual_seed(0)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    train_data, val_data, test_data = split_data(book_data)
+# Initialize data
+with open(sys.argv[1], 'r') as f:
+    config = json.load(f)
 
-    K = len(book_chars)
+# TODO: Rewrite so that all encodings are supported
+start_time = time.time()
+book_data = load_data('./data/goblet_book.txt')
+book_chars = np.unique(book_data)
+char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
+ind_to_char = {idx: char for idx,
+               char in enumerate(book_chars)}
 
-    # TODO: Behöver en lägre lr än i min egen implementation.
-    # Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
+train_data, val_data, test_data = split_data(book_data)
 
-    gamma = 0.9
-    seq_length = 25
+K = len(book_chars)
 
-    model = CharLSTM(K, hidden_layer_size, K, num_layers).to(device)
+# TODO: Behöver en lägre lr än i min egen implementation.
+# Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
 
-    criterion = nn.CrossEntropyLoss(reduction='none')
+model = CharLSTM(K, config['hidden_layer_size'], K,
+                 config['num_layers']).to(device)
 
-    # TODO: Undersök om detta är korrekt.
-    optimizer = optim.RMSprop(model.parameters(), lr=eta)
+criterion = nn.CrossEntropyLoss(reduction='none')
 
-    smooth_loss = None
-    smooth_val_loss = None
+# TODO: Undersök om detta är korrekt.
+optimizer = optim.RMSprop(model.parameters(), lr=config['learning_rate'])
 
-    losses = []
-    val_losses = []
-    iterations = []
+smooth_loss = None
+smooth_val_loss = None
 
-    iteration = 0
-    epoch = 1
+losses = []
+val_losses = []
+iterations = []
 
-    torch.rand
-    while epoch <= 3:
-        print(f'-------------')
-        print(f'Epoch {epoch}')
+iteration = 0
 
-        model.zero_grad()
-        hidden = model.init_hidden(num_layers, batch_size)
+while True:
+    model.zero_grad()
+    hidden = model.init_hidden(config['num_layers'], config['batch_size'])
 
-        for i in range(0, len(train_data) - (seq_length + batch_size - 1), seq_length + batch_size - 1):
-            # Prepare inputs and targets
+    for i in range(0, len(train_data) - (config['seq_length'] + config['batch_size'] - 1), config['seq_length'] + config['batch_size'] - 1):
+        # Prepare inputs and targets
 
-            X, Y = get_seq(train_data, seq_length, K,
-                           batch_size, i, char_to_ind)
+        X, Y = get_seq(train_data, config['seq_length'], K,
+                       config['batch_size'], i, char_to_ind)
 
-            # Forward pass
-            output, hidden = model(X, hidden)
+        # Forward pass
+        output, hidden = model(X, hidden)
 
-            loss = get_loss(output, Y, batch_size, seq_length, K, criterion)
+        loss = get_loss(
+            output, Y, config['batch_size'], config['seq_length'], K, criterion)
 
-            # get validation loss
-            max_val_idx = len(val_data) - (seq_length + batch_size - 1)
-            X_val, Y_val = get_seq(val_data, seq_length, K, batch_size, np.random.randint(
-                max_val_idx), char_to_ind)
-            hiddden_val = model.init_hidden(num_layers, batch_size)
-            output_val, _ = model(X_val, hiddden_val)
-            val_loss = get_loss(output_val, Y_val, batch_size,
-                                seq_length, K, criterion)
+        # get validation loss
+        max_val_idx = len(val_data) - \
+            (config['seq_length'] + config['batch_size'] - 1)
+        X_val, Y_val = get_seq(val_data, config['seq_length'], K, config['batch_size'], np.random.randint(
+            max_val_idx), char_to_ind)
+        hiddden_val = model.init_hidden(
+            config['num_layers'], config['batch_size'])
+        output_val, _ = model(X_val, hiddden_val)
+        val_loss = get_loss(output_val, Y_val, config['batch_size'],
+                            config['seq_length'], K, criterion)
 
-            # print(loss)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 0.001)
-            optimizer.step()
-            hidden = tuple([each.data for each in hidden])
+        # print(loss)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            model.parameters(), config['gradient_clip'])
+        optimizer.step()
+        hidden = tuple([each.data for each in hidden])
 
-            if smooth_loss is None:
-                smooth_loss = loss
-                smooth_val_loss = val_loss
-            else:
-                smooth_loss = 0.999 * smooth_loss + 0.001 * loss
-                smooth_val_loss = 0.999 * smooth_val_loss + 0.001 * val_loss
+        if smooth_loss is None:
+            smooth_loss = loss
+            smooth_val_loss = val_loss
+        else:
+            smooth_loss = config['smooth_loss_factor'] * \
+                smooth_loss + (1 - config['smooth_loss_factor']) * loss
+            smooth_val_loss = config['smooth_loss_factor'] * \
+                smooth_val_loss + (1 - config['smooth_loss_factor']) * val_loss
 
-            if (iteration) % 100 == 0:
-                losses.append(smooth_loss)
-                val_losses.append(smooth_val_loss)
-                iterations.append(iteration)
+        if (iteration) % config['log_every'] == 0:
+            losses.append(smooth_loss)
+            val_losses.append(smooth_val_loss)
+            iterations.append(iteration)
+            print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {
+                  loss:7.2f}. Smooth val loss {smooth_val_loss:7.2f}. Val loss {val_loss:7.2f}.')
 
-            if (iteration) % 1000 == 0:
-                deltaTime = time.time() - start_time
-                hours = int(deltaTime // 3600)
-                minutes = int((deltaTime % 3600) // 60)
-                seconds = int(deltaTime % 60)
-                time_str = f'{hours:02d}:{minutes:02d}:{seconds:02d}'
-                print(f'[{time_str}] Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}. Smooth_val_loss {smooth_val_loss:7.2f}')
+        if iteration % config['syntesize_every'] == 0:
+            x0 = torch.zeros(1, 1, K)
+            x0[0, 0, np.random.randint(K)] = 1
+            hprev = model.init_hidden(config['num_layers'], 1)
+            Y_synth = synthesize(model, hprev, x0, 200, config['temperature'])
 
-            if iteration % 10000 == 0:
+            txt = ''.join([ind_to_char[torch.argmax(y).item()]
+                           for y in Y_synth])
 
-                x0 = torch.zeros(1, 1, K)
-                x0[0, 0, np.random.randint(K)] = 1
-                hprev = model.init_hidden(num_layers, 1)
-                Y_synth = synthesize(model, hprev, x0, 200, temperature)
+            # print(txt)
 
-                txt = ''.join([ind_to_char[torch.argmax(y).item()]
-                              for y in Y_synth])
+        if iteration >= config['n_iters']:
+            break
 
-                # print(txt)
+        iteration += 1
 
-            iteration += 1
-        epoch += 1
-
-    return losses, val_losses
-
-
-if __name__ == '__main__':
-    learning_rates = [0.1, 0.01, 0.001]
-    batch_sizes = [1, 64, 128]
-    num_layers = [1, 2]
-    hidden_layer_size = [64, 128, 256]
-    temperatures = [0.3, 0.6, 1]
-
-    # default values
-    eta = 0.001
-    batch_size = 1
-    layers = 1
-    m = 100
-    temp = 1
-
-    # Train an RNN baseline on the dataset you use and compare at least to both a one and two layer LSTM both qualitatively and quantitatively
-    train_loss_values, val_loss_values = train_model(
-        eta=eta, batch_size=batch_size, num_layers=1, hidden_layer_size=m, temperature=temp)
-    np.save("Train_loss_one_layer.npy", np.array(train_loss_values))
-    np.save("Val_loss_one_layer.npy", np.array(val_loss_values))
-    train_loss_values, val_loss_values = train_model(
-        eta=eta, batch_size=batch_size, num_layers=2, hidden_layer_size=m, temperature=temp)
-    np.save("Train_loss_two_layers.npy", np.array(train_loss_values))
-    np.save("Val_loss_two_layers.npy", np.array(val_loss_values))
-
-    # Investigate how increasing the number of the nodes of the hidden state increases or decreases performance.
-    for size in hidden_layer_size:
-        train_loss_values, val_loss_values = train_model(
-            eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-        np.save(f"Train loss hidden_size={size}.npy", np.array(train_loss_values))
-        np.save(f"Val loss hidden size={size}.npy", np.array(val_loss_values))
-
-    # Investigate the influence of different training parameters such as batch size and learning rate.
-    # You can for example perform a grid search or random search to find the optimal training parameters.
-    for eta in learning_rates:
-        for batch_size in batch_sizes:
-            train_loss_values, val_loss_values = train_model(
-                eta=eta, batch_size=batch_size, num_layers=layers, hidden_layer_size=size, temperature=temp)
-            np.save(f"Train eta={eta} batch_size={batch_size}.npy", np.array(train_loss_values))
-            np.save(f"Val eta={eta} batch_size={batch_size}.npy", np.array(val_loss_values))
+    if iteration >= config['n_iters']:
+        break
