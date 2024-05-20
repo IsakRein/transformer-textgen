@@ -47,8 +47,8 @@ class RNN(nn.Module):
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"text_{tokenizer}.npy"), dtype=torch.long)
-    with open(f"vocabulary_{tokenizer}.pkl", "rb") as f:
+        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
     return data, vocab
 
