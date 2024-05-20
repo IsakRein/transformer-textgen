@@ -5,6 +5,8 @@ from torch import nn
 import torch.nn.functional as F
 import math
 import pickle
+import sys
+import json
 
 
 class TextProcessor:
@@ -34,25 +36,22 @@ def get_batch(split):
     return X_batch, Y_batch
 
 
-def load_bpe_gpt4():
-    """
-    Loads the GPT4-tokenizer
-    """
-    # byte_list is the entire text encoded into tokens. Se more in bpe.py
-    byte_list = torch.tensor(
-        np.load("encoded_text_gpt4.npy"), dtype=torch.long)
+def load_data(tokenizer):
+    data = torch.tensor(
+        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        vocab = pickle.load(f)
+    return data, vocab
 
-    # token_vocabulary is used to decode tokens to chars
-    with open("vocabulary_gpt4.pkl", "rb") as f:
-        token_vocabulary = pickle.load(f)
-    return byte_list, token_vocabulary
 
-# From Karpathy
 def decode(ids, vocab):
     # given ids (list of integers), return Python string
-    tokens = b"".join(vocab[idx.item()] for idx in ids)
-    text = tokens.decode("utf-8", errors="replace")
-    return text
+    if config['tokenizer'] == 'char':
+        return "".join([vocab[idx.item()] for idx in ids])
+    else:
+        tokens = b"".join(vocab[idx.item()] for idx in ids)
+        text = tokens.decode("utf-8", errors="replace")
+        return text
 
 
 @torch.no_grad()
@@ -178,7 +177,6 @@ class DecoderOnlyTransformer(nn.Module):
         self.transform_to_vocab_size = nn.Linear(
             config['n_embd'], vocab_size)
 
-
     def forward(self, X, Y=None):
         token_embeddings = self.embed_tokens(X)
         X = self.positional_encoding(token_embeddings)
@@ -208,21 +206,17 @@ class DecoderOnlyTransformer(nn.Module):
         return tokens
 
 
-# Load configuration
-with open('config.json', 'r') as f:
-    config = json.load(f)
-
-# Set random seed and device
+# Set seed
 torch.manual_seed(0)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Initialize data
+with open(sys.argv[1], 'r') as f:
+    config = json.load(f)
 
-# text_processor = TextProcessor(text)
-# data = torch.tensor(text_processor.encode(text), dtype=torch.long)
+data, vocab = load_data(config['tokenizer'])
 
-data, vocab = load_bpe_gpt4()
-
-n = int(len(data) * 0.9)
+n = int(len(data) * config['train_size'])
 train_data = data[:n]
 val_data = data[n:]
 
@@ -231,23 +225,23 @@ model = DecoderOnlyTransformer(len(vocab)).to(device)
 optimizer = torch.optim.AdamW(
     model.parameters(), lr=config['learning_rate'], weight_decay=config['lambda'])
 
-torch.save(model.state_dict(), 'model.pth')
-# Training loop
-print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
 
-for iter in range(config['max_iters']):
+# Training loop
+# print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
+
+for iter in range(config['n_iters']):
     X_batch, Y_batch = get_batch('train')
     logits, loss = model(X_batch, Y_batch)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
 
-    if iter % config['eval_interval'] == 0 or iter == config['max_iters'] - 1:
+    if iter % config['log_every'] == 0:
         losses = estimate_loss()
         print(f"step {iter}: train loss {
               losses['train']:.4f}, val loss {losses['val']:.4f}")
 
-    if iter % 1000 == 0:
+    if iter % config['syntesize_every'] == 0:
         prompt = torch.tensor([[0]], dtype=torch.long, device=device)
         print(decode(model.synthesize(
             prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab))
@@ -259,7 +253,6 @@ print(f'Final val loss: {losses["val"]:.4f}')
 
 # Generate text
 print(f'Synthesizing text...')
-
 prompt = torch.tensor([[0]], dtype=torch.long, device=device)
 print(decode(model.synthesize(
     prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab))
