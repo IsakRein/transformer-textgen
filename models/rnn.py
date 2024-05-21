@@ -370,7 +370,6 @@ X[0,0] = 1
 x0 = X[0, :].reshape(1, -1)
 
 if config['sampling'] == "temp":
-    
     Y_synth = synthesize(model, hprev, x0, 200)
     sample = [torch.argmax(y).item() for y in Y_synth]
     sample = decode(sample, vocab)
