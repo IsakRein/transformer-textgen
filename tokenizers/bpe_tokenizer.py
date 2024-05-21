@@ -94,7 +94,7 @@ def encode(text, merges):
 
 
 if __name__ == "__main__":
-    with open("goblet_book.txt", "r") as f:
+    with open("data/goblet_book.txt", "r") as f:
         text = f.read()
 
     bytes_list = list(text.encode("UTF-8"))

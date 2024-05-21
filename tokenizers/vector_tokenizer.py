@@ -39,7 +39,7 @@ def flatten(xss):
 
 vector_size = 80
 
-sentences = process_raw_text_file("goblet_book.txt")
+sentences = process_raw_text_file("data/goblet_book.txt")
 model = Word2Vec(sentences=sentences, vector_size=vector_size,
                  min_count=1, workers=4)
 
