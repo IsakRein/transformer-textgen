@@ -34,9 +34,9 @@ class RNN(nn.Module):
         nn.init.zeros_(self.V.bias)
 
     def forward(self, input, hidden):
-        batch_size = input.size(0)
-        output = torch.zeros((batch_size, self.output_size), dtype=torch.float)
-        for i in range(batch_size):
+        seq_length, K = input.shape
+        output = torch.zeros((seq_length, self.output_size), dtype=torch.float)
+        for i in range(seq_length):
             hidden = torch.tanh(self.U(input[i]) + self.W(hidden))
             output[i, :] = torch.log_softmax(self.V(hidden), dim=1)
         return output, hidden
@@ -159,73 +159,85 @@ else:
     K = len(vocab.keys())
     num_words = len(data)
 
-rnn = RNN(K, config['m'], K).to(device)
+
+# Set seed
+torch.manual_seed(0)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Initialize data
+with open(sys.argv[1], 'r') as f:
+    config = json.load(f)
+
+if config['tokenizer'] == 'vector':
+    model, word2vec, words, word_set, word_to_index = load_word2vec(use_fewer_dimensions=False)
+    test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
+    K = word2vec.shape[0]
+    num_words = word2vec.shape[1]
+    output_size = word_set.shape[0]
+else:
+    data, vocab = load_data(config['tokenizer'])
+    K = len(vocab.keys())
+    num_words = len(data)
+
+lstm = LSTM(K, config['m'], K, num_layers=config.get('num_layers', 1)).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
-optimizer = optim.RMSprop(rnn.parameters(), lr=config['learning_rate'])
+optimizer = optim.RMSprop(lstm.parameters(), lr=config['learning_rate'])
 
 smooth_loss = None
-
 iteration = 0
 
 while True:
-    hidden = rnn.initHidden()
+    hidden, cell = lstm.initHidden()
     for i in range(0, num_words - config['seq_length'], config['seq_length']):
         if config['tokenizer'] == 'vector':
             X = word2vec[:, i:i+25].T
-            X = torch.tensor(X)
+            X = torch.tensor(X, device=device)
             Y = construct_Y_batch(
-                start_index=i+1, 
-                end_index=i+26, 
-                words=words,       
-                word_set=word_set, 
+                start_index=i+1,
+                end_index=i+26,
+                words=words,
+                word_set=word_set,
                 seq_length=config['seq_length'],
                 word_to_index=word_to_index
-            )
+            ).to(device)
         else:
             X_inds = data[i:i+config['seq_length']]
             Y_inds = data[i+1:i+config['seq_length']+1]
 
-            X = torch.zeros((config['seq_length'], K), dtype=float)
-            Y = torch.zeros((config['seq_length'], K), dtype=float)
+            X = torch.zeros((config['seq_length'], K), dtype=torch.float, device=device)
+            Y = torch.zeros((config['seq_length'], K), dtype=torch.float, device=device)
 
-            # One-hot encode inputs and outputs
             for t, (x_char, y_char) in enumerate(zip(X_inds, Y_inds)):
                 X[t, x_char] = 1
                 Y[t, y_char] = 1
 
-        # Forward pass
-        hidden = rnn.initHidden()
-        output, hidden = rnn(X, hidden)
+        hidden, cell = lstm.initHidden()
+        output, hidden, cell = lstm(X, hidden, cell)
 
-        # Backward pass
         loss = criterion(output, Y)
 
-        # TODO: Undersök detta. Tror konsekvensen är att vi inte backpropagar genom hidden state.
-        hidden = hidden.detach()
+        hidden = [h.detach() for h in hidden]
+        cell = [c.detach() for c in cell]
 
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            rnn.parameters(), config['gradient_clip'])
+        torch.nn.utils.clip_grad_norm_(lstm.parameters(), config['gradient_clip'])
         optimizer.step()
 
         if smooth_loss is None:
             smooth_loss = loss
         else:
-            smooth_loss = config['smooth_loss_factor'] * \
-                smooth_loss + (1 - config['smooth_loss_factor']) * loss
+            smooth_loss = config['smooth_loss_factor'] * smooth_loss + (1 - config['smooth_loss_factor']) * loss
 
         if (iteration) % config['log_every'] == 0:
-            print(f'Iter {iteration:7d}. Smooth loss {
-                smooth_loss:7.2f}. Loss {loss:7.2f}.')
+            print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
 
-        if iteration % config['syntesize_every'] == 0:
+        if iteration % config['synthesize_every'] == 0:
             x0 = X[0, :].reshape(1, -1)
-            hprev = rnn.initHidden()
-            Y_synth = synthesize(rnn, hprev, x0, 200)
-            print(decode([torch.argmax(y).item()
-                          for y in Y_synth], vocab))
+            hprev, cprev = lstm.initHidden()
+            Y_synth = synthesize(lstm, hprev, cprev, x0, 200)
+            print(decode([torch.argmax(y).item() for y in Y_synth], vocab))
 
         if iteration >= config['n_iters']:
             break
