@@ -53,39 +53,31 @@ def load_data(tokenizer):
     return data, vocab
 
 
-def load_word2vec(use_fewer_dimensions=False):
+def load_word2vec():
     # TODO: Tog bort smaller vector här. Tänker att vi ändå vill köra samma när vi skapar resultat
-    # if use_fewer_dimensions:
-    #     model_path = "word_embeddings/word2vec_80.model"
-    #     word2vec_path = "word_embeddings/word_vectors_80.npy"
-    # else:
-    #     model_path = "word_embeddings/word2vec.model"
-    #     word2vec_path = "word_embeddings/word_vectors.npy"
-    word2vec_path = "token_data/text_vector.npy"
+    word2vec_path = "token_data/text_vec.npy"
 
     # The gensim model.
-    model = Word2Vec.load("token_data/vector.model")
+    model = Word2Vec.load("token_data/vec_gensim.model")
 
     # K x N numpy array where K is the number of features for a word and N is the number of words in the corpus.
-    word2vec = np.load("token_data/word_vectors.npy")
+    word2vec = np.load("token_data/text_vec.npy")
 
     # List of all words that appear in chronological order.
-    words = np.load("token_data/words.npy")
+    words = np.load("token_data/vec_words.npy")
 
     # Set of all unique words in the corpus. Is actually list(set) so it supports indexing.
-    word_set = np.load("token_data/word_set.npy")
+    word_set = np.load("token_data/vec_word_set.npy")
 
     # Keypairs of words in word_set and their index in word_set
-    with open("token_data/vocabulary_vector.pkl", "rb") as f:
+    with open("token_data/vocabulary_vec.pkl", "rb") as f:
         word_to_index = pickle.load(f)
 
     return model, word2vec, words, word_set, word_to_index
 
-
 def test_word2vec_seq(model, word2vec_data, words):
     for i in range(len(words)):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
-
 
 def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_to_index):
     Y = torch.zeros((seq_length, word_set.shape[0]))
@@ -96,6 +88,30 @@ def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_
         i += 1
     return Y
 
+def synthesize_word2vec(rnn, hprev, x0, n, word_set, word2vec_model):
+    h_t = hprev
+    x_t = x0
+    Y = [""] * n
+    
+    for t in range(n):
+        output, h_t = rnn(x_t, h_t)
+        p_t = output.detach().numpy()
+        p_t = np.exp(p_t)
+        p_t = p_t / np.sum(p_t)
+
+        # generate x_t
+        cp = np.cumsum(p_t)
+        a = np.random.rand()
+        ixs = np.where(cp - a > 0)[0]
+        ii = ixs[0]
+        word_vec = word2vec_model.wv[word_set[ii]]
+
+        # Update Y and x_t for next iteration
+        Y[t] = word_set[ii]
+
+        x_t = torch.reshape(torch.tensor(word_vec), x_t.shape)
+        x_t = x_t.double()
+    return Y
 
 def synthesize(rnn, hprev, x0, n):
     h_t = hprev
@@ -120,11 +136,13 @@ def synthesize(rnn, hprev, x0, n):
         x_t[0, ii] = 1
     return Y
 
-
-def decode(ids, vocab):
+def decode(ids, vocab, vec_word_set=[]):
     # given ids (list of integers), return Python string
     if config['tokenizer'] == 'char':
         return "".join([vocab[idx] for idx in ids])
+    elif config['tokenizer'] == 'vec':
+        assert vec_word_set != [], "The word set has not been properly read"
+        return "".join(vec_word_set[idx] for idx in ids)
     else:
         tokens = b"".join(vocab[idx] for idx in ids)
         text = tokens.decode("utf-8", errors="replace")
@@ -146,10 +164,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-if config['tokenizer'] == 'vector':
-    model, word2vec, words, word_set, word_to_index = load_word2vec(
-        use_fewer_dimensions=False)
-    test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
+if config['tokenizer'] == 'vec':
+    word2vec_model, word2vec, words, word_set, word_to_index = load_word2vec()
+    test_word2vec_seq(model=word2vec_model, word2vec_data=word2vec, words=words)
     K = word2vec.shape[0]
     num_words = word2vec.shape[1]
     output_size = word_set.shape[0]
@@ -158,8 +175,9 @@ else:
     # Initialize model
     K = len(vocab.keys())
     num_words = len(data)
+    output_size = K
 
-rnn = RNN(K, config['m'], K).to(device)
+rnn = RNN(K, config['m'], output_size).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
 optimizer = optim.RMSprop(rnn.parameters(), lr=config['learning_rate'])
@@ -171,7 +189,7 @@ iteration = 0
 while True:
     hidden = rnn.initHidden()
     for i in range(0, num_words - config['seq_length'], config['seq_length']):
-        if config['tokenizer'] == 'vector':
+        if config['tokenizer'] == 'vec':
             X = word2vec[:, i:i+25].T
             X = torch.tensor(X)
             Y = construct_Y_batch(
@@ -217,15 +235,18 @@ while True:
                 smooth_loss + (1 - config['smooth_loss_factor']) * loss
 
         if (iteration) % config['log_every'] == 0:
-            print(f'Iter {iteration:7d}. Smooth loss {
-                smooth_loss:7.2f}. Loss {loss:7.2f}.')
+            print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {loss:7.2f}.')
 
         if iteration % config['syntesize_every'] == 0:
             x0 = X[0, :].reshape(1, -1)
             hprev = rnn.initHidden()
-            Y_synth = synthesize(rnn, hprev, x0, 200)
-            print(decode([torch.argmax(y).item()
-                          for y in Y_synth], vocab))
+            if config['tokenizer'] == 'vec':
+                generated_text = synthesize_word2vec(rnn, hprev, x0, 200, word_set, word2vec_model)
+                print("".join(generated_text))
+            else:
+                Y_synth = synthesize(rnn, hprev, x0, 200)
+                print(decode([torch.argmax(y).item()
+                            for y in Y_synth], vocab))
 
         if iteration >= config['n_iters']:
             break
