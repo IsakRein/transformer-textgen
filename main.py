@@ -2,6 +2,9 @@ import json
 import os
 import sys
 
+if 'token_data' not in os.listdir('.'):
+    os.mkdir('token_data')
+
 files = os.listdir('./token_data')
 
 # Generate tokens
