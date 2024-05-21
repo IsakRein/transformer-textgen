@@ -22,7 +22,6 @@ for tokenizer in [
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-
 # Run model
 print(f'\nRunning {config["model"]} model with config {sys.argv[1]}')
 print('-' * 50)
