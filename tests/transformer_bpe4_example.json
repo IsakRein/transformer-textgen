@@ -18,5 +18,7 @@
   "syntesize_every": 10000,
   "train_size": 0.9,
   "lambda": 0.001,
-  "temperature": 0.9
+  "sampling": "nucleus",
+  "temperature": 0.9,
+  "nucleus": 0.9
 }
