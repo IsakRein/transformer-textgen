@@ -172,3 +172,4 @@ share/
 pyvenv.cfg
 *.npy
 *.pkl
+*.model
