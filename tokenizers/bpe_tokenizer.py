@@ -3,7 +3,7 @@ import numpy as np
 import pickle
 
 """
-The code in this document is heavily inspired Andrej Karpathy's 
+The code in this document is heavily inspired by Andrej Karpathy's 
 repo minbpe. Functions copied directly from that repository are 
 labeled "From Karpathy". The other functions are rewrites/own implementations
 of functions from that repository.
@@ -32,7 +32,7 @@ def get_stats(bytes_list):
 
 def karpathy_merge(ids, pair, idx):
     """
-    Replace all consecutive occurences of pair with the new token idx in ids 
+    Replace all consecutive occurrences of pair with the new token idx in ids 
     """
     newids = []
     i = 0
@@ -93,34 +93,24 @@ def encode(text, merges):
     return tokens
 
 
-if __name__ == "__main__":
-    with open("goblet_book.txt", "r") as f:
+def process_file(file_path, output_prefix, desired_vocab_size):
+    with open(file_path, "r") as f:
         text = f.read()
 
     bytes_list = list(text.encode("UTF-8"))
-    bytes_list, merges = tokenize(
-        bytes_list=bytes_list, desired_vocab_size=desired_vocabulary_size)
-
+    bytes_list, merges = tokenize(bytes_list, desired_vocab_size)
     vocab = create_vocabulary(merges)
-    test_text = "Doom is a 2016 first-person shooter video game developed by id Software and published by Bethesda Softworks. The game is the first major installment in the Doom series since 2004's Doom 3 and was a reboot of the franchise. It was released for PlayStation 4, Windows, and Xbox One in May 2016. A port for Nintendo Switch was co-developed with Panic Button and released in November 2017, and a version for Google Stadia was released in August 2020. Players take the role of an unnamed space marine, known as the Doom Slayer, as he battles demonic forces within an energy-mining facility on Mars and in Hell. Doom was announced as Doom 4 in 2008, and that version underwent an extensive development cycle with different builds and designs before the game was restarted in 2011 and revealed as simply Doom in 2014. It was tested by customers who pre-ordered the 2014 MachineGames game Wolfenstein: The New Order and the general public. Mick Gordon composed the music, with contributions by Richard Devine. The game also has an online multiplayer component and a level editor known as SnapMap, co-developed with Certain Affinity and Escalation Studios respectively.Doom was well received by critics and players. The single-player campaign, graphics, soundtrack, and gameplay received considerable praise, whereas the multiplayer mode drew significant criticism. It was the second best-selling video game in North America and the UK in the week of its release and sold over 500,000 copies for PCs by the end of May 2016. A sequel, Doom Eternal, was released in March 2020."
 
-    test_text2 = decode(encode(test_text, merges), vocab)
-    assert test_text2 == test_text
+    np.save(f"{output_prefix}_bpe.npy", bytes_list)
 
-    np.save("token_data/text_bpe.npy", bytes_list)
-
-    with open('token_data/vocabulary_bpe.pkl', 'wb') as f:
+    with open(f'{output_prefix}_vocabulary_bpe.pkl', 'wb') as f:
         pickle.dump(vocab, f)
 
-    # with open('vocabulary_bpe.pkl', 'rb') as f:
-    #     loaded_vocabulary = pickle.load(f)
 
-    # loaded_bytes_list = np.load("bytes_list.npy", allow_pickle=True)
+if __name__ == "__main__":
+    files = [("data/train.txt", "token_data/train"),
+             ("data/validation.txt", "token_data/validation"),
+             ("data/test.txt", "token_data/test")]
 
-    # assert np.array_equal(bytes_list, loaded_bytes_list) == True
-    # assert loaded_vocabulary == vocab
-
-    # test_text = "Doom is a 2016 first-person shooter video game developed by id Software and published by Bethesda Softworks. The game is the first major installment in the Doom series since 2004's Doom 3 and was a reboot of the franchise. It was released for PlayStation 4, Windows, and Xbox One in May 2016. A port for Nintendo Switch was co-developed with Panic Button and released in November 2017, and a version for Google Stadia was released in August 2020. Players take the role of an unnamed space marine, known as the Doom Slayer, as he battles demonic forces within an energy-mining facility on Mars and in Hell. Doom was announced as Doom 4 in 2008, and that version underwent an extensive development cycle with different builds and designs before the game was restarted in 2011 and revealed as simply Doom in 2014. It was tested by customers who pre-ordered the 2014 MachineGames game Wolfenstein: The New Order and the general public. Mick Gordon composed the music, with contributions by Richard Devine. The game also has an online multiplayer component and a level editor known as SnapMap, co-developed with Certain Affinity and Escalation Studios respectively.Doom was well received by critics and players. The single-player campaign, graphics, soundtrack, and gameplay received considerable praise, whereas the multiplayer mode drew significant criticism. It was the second best-selling video game in North America and the UK in the week of its release and sold over 500,000 copies for PCs by the end of May 2016. A sequel, Doom Eternal, was released in March 2020."
-
-    # test_text2 = decode(encode(test_text, merges), vocab)
-    # assert test_text2 == test_text
+    for file_path, output_prefix in files:
+        process_file(file_path, output_prefix, desired_vocabulary_size)

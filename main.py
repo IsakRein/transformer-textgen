@@ -2,8 +2,26 @@ import json
 import os
 import sys
 
+# Check that models are uploaded
+if 'models' not in os.listdir('.'):
+    raise 'No models directory found'
+
+for model in ['rnn', 'lstm', 'transformer']:
+    if f'{model}.py' not in os.listdir('./models'):
+        raise f'No {model} model found'
+
+# Check that tokenizers are uploaded
+if 'tokenizers' not in os.listdir('.'):
+    raise 'No tokenizers directory found'
+
+for tokenizer in ['char_tokenizer.py', 'vector_tokenizer.py', 'bpe_tokenizer.py', 'bpe4_tokenizer.py']:
+    if tokenizer not in os.listdir('./tokenizers'):
+        raise f'No {tokenizer} tokenizer found'
+
+# Create folder
 if 'token_data' not in os.listdir('.'):
     os.mkdir('token_data')
+
 
 files = os.listdir('./token_data')
 
@@ -17,7 +35,7 @@ for tokenizer in [
     # Run tokenizer
     if f'vocabulary_{tokenizer}.pkl' not in files:
         print(f'Running {tokenizer} tokenizer')
-        os.system(f'./bin/python tokenizers/{tokenizer}_tokenizer.py')
+        os.system(f'venv/bin/python tokenizers/{tokenizer}_tokenizer.py')
 
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
