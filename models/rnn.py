@@ -47,10 +47,6 @@ class RNN(nn.Module):
 
     def initHidden(self):
         return torch.zeros(1, self.hidden_size, dtype=float)
-    
-    
-    
-    
 
 
 def load_data(tokenizer):
@@ -87,15 +83,6 @@ def load_word2vec():
 def test_word2vec_seq(model, word2vec_data, words):
     for i in range(len(words)):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
-
-def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_to_index):
-    Y = torch.zeros((seq_length, word_set.shape[0]))
-    i = 0
-    for j in range(start_index, end_index):
-        index = word_to_index[words[j]]
-        Y[i, index] = 1
-        i += 1
-    return Y
 
 def synthesize_word2vec(rnn, hprev, x0, n, vocab, word2vec_model):
     h_t = hprev
@@ -224,9 +211,15 @@ def estimate_metrics():
         losses = torch.zeros(config['eval_iters'])
         perplexity_metric = Perplexity()
         if split == "train":
-            start_idx = np.random.randint(len(train_data))-config['eval_iters']
+            if config['tokenizer'] == 'vec':
+                start_idx = np.random.randint((train_data.shape[1])) - config['eval_iters']
+            else: 
+                start_idx = np.random.randint(len(train_data))-config['eval_iters']
         elif split == "val":
-            start_idx = np.random.randint(len(val_data))-config['eval_iters']
+            if config['tokenizer'] == 'vec':
+                start_idx = np.random.randint((val_data.shape[1])) - config['eval_iters']
+            else:
+                start_idx = np.random.randint(len(val_data))-config['eval_iters']
         for k in range(config['eval_iters']):
             if config['tokenizer'] == 'vec':
                 X, Y = construct_word2Vec_batch(split, start_idx + k)
@@ -303,11 +296,13 @@ else:
     K = len(vocab.keys())
     n = int(len(data) * config['train_size'])
     train_data = data[:n]
-    print("train_data", train_data.shape)
     val_data = data[n:]
 
 output_size = len(vocab.keys())
-num_words = len(data)
+if config['tokenizer'] == 'vec':
+    num_words = data.shape[1]
+else:
+    num_words = len(data)
 
 model = RNN(K, config['m'], output_size).to(device)
 
@@ -318,7 +313,7 @@ smooth_loss = None
 
 iteration = 0
 
-test_files = re.findall(r'\.\/tests\/(\w+)\.json', sys.argv[1])
+test_files = re.findall(r'tests\/(\w+)\.json', sys.argv[1])
 if test_files != []:
     test_file = test_files[0]
     PATH = f"./model_data/{test_file}"
