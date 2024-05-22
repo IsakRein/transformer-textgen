@@ -40,6 +40,9 @@ model.save("token_data/vec_gensim.model")
 
 words = flatten(sentences)
 word_set = sorted(list(set(words)))
+vocab = {}
+for i, word in enumerate(word_set):
+    vocab[i] = word
 
 word_vectors = np.zeros((vector_size, len(words)))
 for i, word in enumerate(words):
@@ -49,9 +52,11 @@ word_to_index = {}
 for i, word in enumerate(word_set):
     word_to_index[word] = i
 
-with open('token_data/vocabulary_vec.pkl', 'wb') as f:
+with open('token_data/word_to_index_vec.pkl', 'wb') as f:
     pickle.dump(word_to_index, f)
+
+with open('token_data/vocabulary_vec.pkl', 'wb') as f:
+    pickle.dump(vocab, f)
 
 np.save("token_data/text_vec.npy", word_vectors)
 np.save("token_data/vec_words.npy", np.array(words))
-np.save("token_data/vec_word_set", np.array(word_set))

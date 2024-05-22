@@ -172,6 +172,4 @@ share/
 pyvenv.cfg
 *.npy
 *.pkl
-
-# Added by Victor
-token_data/vec_gensim.model
+*.model

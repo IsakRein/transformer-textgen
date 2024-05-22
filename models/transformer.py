@@ -7,6 +7,10 @@ import math
 import pickle
 import sys
 import json
+import os
+import re
+from torcheval.metrics.text import Perplexity
+from spellchecker import SpellChecker
 
 
 class TextProcessor:
@@ -55,19 +59,36 @@ def decode(ids, vocab):
 
 
 @torch.no_grad()
-def estimate_loss():
+def estimate_metrics():
     out = {}
+    perplexity = {}
     model.eval()
     for split in ['train', 'val']:
         losses = torch.zeros(config['eval_iters'])
+        perplexity_metric = Perplexity()
         for k in range(config['eval_iters']):
             X, Y = get_batch(split)
-            _, loss = model(X, Y)
+            outputs, loss = model(X, Y)
             losses[k] = loss.item()
+            perplexity_metric.update(outputs.unsqueeze(0), Y)
         out[split] = losses.mean().item()
+        perplexity[split] = perplexity_metric.compute().item()
     model.train()
-    return out
+    return out, perplexity
 
+def load_spell_checker(input_text):
+    spell_checker = SpellChecker(language=None)
+    known = re.sub(r'[^a-zA-Z\s]', ' ', input_text).split()
+    spell_checker.word_frequency.load_words(known)
+    return spell_checker
+
+def evaluate_spelling(spell_checker, generated_text):
+    words = re.sub(r'[^a-zA-Z\s]', ' ', generated_text).split()
+    misspelled = spell_checker.unknown(words)
+    total_words = len(words)
+    correctly_spelled_words = total_words - len(misspelled)
+    correctly_spelled_percentage = (correctly_spelled_words / total_words) * 100
+    return correctly_spelled_percentage
 
 class PositionalEncoding(nn.Module):
     def __init__(self, n_embd, seq_length):
@@ -204,7 +225,48 @@ class DecoderOnlyTransformer(nn.Module):
 
             tokens = torch.cat((tokens, next_token), dim=1)
         return tokens
+    
+    def nucleus_sampling(self, tokens, max_new_tokens, theta):
+        for _ in range(max_new_tokens):
+            input = tokens[:, -config['seq_length']:]
+            logits, _ = self(input)
+            
+            logits = logits[:, -1, :]
+            
+            probs = torch.nn.functional.softmax(logits, dim=-1)
+            
+            sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+            
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+            
+            cutoff_index = torch.where(cumulative_probs[0] >= theta)[0][0] + 1
+            
+            sorted_probs[0][cutoff_index:] = 0
+            sorted_probs = sorted_probs / torch.sum(sorted_probs)
+            
+            next_token = torch.multinomial(sorted_probs, num_samples=1)
+            tokens = torch.cat((tokens, sorted_indices[0][next_token]), dim=1)
+        return tokens
 
+def load_model(PATH):
+    if (os.path.exists(PATH)):
+        print("Loading model")
+        model.load_state_dict(torch.load(f"{PATH}/model.pth"))
+        train_loss_values = torch.load(f"{PATH}/train_losses.pth")
+        val_loss_values = torch.load(f"{PATH}/val_losses.pth")
+        train_perplexity = torch.load(f"{PATH}/train_perplexity.pth")
+        val_perplexity = torch.load(f"{PATH}/val_perplexity.pth")
+        return True, train_loss_values, val_loss_values , train_perplexity, val_perplexity
+    else:
+        return False, [], [], [], []
+    
+def save_model(PATH,train_loss_values,val_loss_values,train_perplexity, val_perplexity):
+    os.mkdir(PATH) 
+    torch.save(model.state_dict(), f"{PATH}/model.pth")
+    torch.save(torch.tensor(train_loss_values), f"{PATH}/train_losses.pth")
+    torch.save(torch.tensor(val_loss_values), f"{PATH}/val_losses.pth")
+    torch.save(torch.tensor(train_perplexity), f"{PATH}/train_perplexity.pth")
+    torch.save(torch.tensor(val_perplexity), f"{PATH}/val_perplexity.pth")
 
 # Set seed
 torch.manual_seed(0)
@@ -225,34 +287,63 @@ model = DecoderOnlyTransformer(len(vocab)).to(device)
 optimizer = torch.optim.AdamW(
     model.parameters(), lr=config['learning_rate'], weight_decay=config['lambda'])
 
+test_file = re.findall(r'\.\/tests\/(\w+)\.json', sys.argv[1])[0]
+PATH = f"./model_data/{test_file}"
+model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
 
-# Training loop
-# print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
+if (not model_loaded):
+    # Training loop
+    # print(f"Model has {sum(p.numel() for p in model.parameters()):,} parameters")
 
-for iter in range(config['n_iters']):
-    X_batch, Y_batch = get_batch('train')
-    logits, loss = model(X_batch, Y_batch)
-    optimizer.zero_grad(set_to_none=True)
-    loss.backward()
-    optimizer.step()
+    for iter in range(config['n_iters']):
+        X_batch, Y_batch = get_batch('train')
+        logits, loss = model(X_batch, Y_batch)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
 
-    if iter % config['log_every'] == 0:
-        losses = estimate_loss()
-        print(f"step {iter}: train loss {
-              losses['train']:.4f}, val loss {losses['val']:.4f}")
+        if iter % config['log_every'] == 0:
+            losses, perplexity = estimate_metrics()
+            train_loss_values.append(losses['train'])
+            val_loss_values.append(losses['val'])
+            train_perplexity.append(perplexity['train'])
+            val_perplexity.append(perplexity['val'])
+            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
-    if iter % config['syntesize_every'] == 0:
-        prompt = torch.tensor([[0]], dtype=torch.long, device=device)
-        print(decode(model.synthesize(
-            prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab))
-
-
-losses = estimate_loss()
-print(f'Final train loss: {losses["train"]:.4f}')
-print(f'Final val loss: {losses["val"]:.4f}')
+        if iter % config['syntesize_every'] == 0:
+            prompt = torch.tensor([[0]], dtype=torch.long, device=device)
+            print(decode(model.synthesize(
+                prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab))
+    
+    #final eval
+    losses, perplexity = estimate_metrics()
+    train_loss_values.append(losses['train'])
+    val_loss_values.append(losses['val'])
+    train_perplexity.append(perplexity['train'])
+    val_perplexity.append(perplexity['val'])
+    save_model(PATH, train_loss_values, val_loss_values, train_perplexity, val_perplexity)
+    
+ 
+print(f'Final train loss: {train_loss_values[-1]:.4f}')
+print(f'Final val loss: {val_loss_values[-1]:.4f}')
+print(f'Final train perplexity: {train_perplexity[-1]:.4f}')
+print(f'Final val perplexity: {val_perplexity[-1]:.4f}')
 
 # Generate text
 print(f'Synthesizing text...')
 prompt = torch.tensor([[0]], dtype=torch.long, device=device)
-print(decode(model.synthesize(
-    prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab))
+if config['sampling'] == "temp":
+    sample = decode(model.synthesize(prompt, max_new_tokens=config['max_new_tokens'], temperature=config['temperature'])[0], vocab)
+elif config['sampling'] == "nucleus":
+    sample = decode(model.nucleus_sampling(prompt, max_new_tokens=config['max_new_tokens'], theta=config['nucleus'])[0], vocab)
+print(sample)
+with open (f"{PATH}/text_sample.txt", "w") as file:
+    file.write(sample)
+
+with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
+    text = f.read()
+spell_checker = load_spell_checker(text)
+spelling_accuracy = evaluate_spelling(spell_checker, sample)
+with open (f"{PATH}/spelling_accuracy.txt", "w") as file:
+    file.write(str(spelling_accuracy))
+

@@ -1,110 +1,269 @@
 import torch.nn as nn
-import torch.nn.functional as F
 import torch
-import torchvision
-import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
 import numpy as np
 import torch.optim as optim
 import pickle
 import sys
 import json
-import time
+from gensim.models import Word2Vec
+import os
+import re
+from torcheval.metrics.text import Perplexity
+from spellchecker import SpellChecker
 
 
-class CharLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers):
-        super(CharLSTM, self).__init__()
-        self.hidden_size = hidden_size
+class LSTMCell(nn.Module):
+    def __init__(self, input_size, hidden_size):
+        super(LSTMCell, self).__init__()
         self.input_size = input_size
+        self.hidden_size = hidden_size
+
+        self.W_ii = nn.Parameter(torch.Tensor(input_size, hidden_size))
+        self.W_if = nn.Parameter(torch.Tensor(input_size, hidden_size))
+        self.W_ig = nn.Parameter(torch.Tensor(input_size, hidden_size))
+        self.W_io = nn.Parameter(torch.Tensor(input_size, hidden_size))
+
+        self.W_hi = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
+        self.W_hf = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
+        self.W_hg = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
+        self.W_ho = nn.Parameter(torch.Tensor(hidden_size, hidden_size))
+
+        self.b_i = nn.Parameter(torch.Tensor(hidden_size))
+        self.b_f = nn.Parameter(torch.Tensor(hidden_size))
+        self.b_g = nn.Parameter(torch.Tensor(hidden_size))
+        self.b_o = nn.Parameter(torch.Tensor(hidden_size))
+
+        self.init_weights()
+
+    def init_weights(self):
+        stdv = 1.0 / np.sqrt(self.hidden_size)
+        for weight in self.parameters():
+            weight.data.uniform_(-stdv, stdv)
+
+    def forward(self, x, hidden):
+        h, c = hidden
+
+        i = torch.sigmoid(x @ self.W_ii + h @ self.W_hi + self.b_i)
+        f = torch.sigmoid(x @ self.W_if + h @ self.W_hf + self.b_f)
+        g = torch.tanh(x @ self.W_ig + h @ self.W_hg + self.b_g)
+        o = torch.sigmoid(x @ self.W_io + h @ self.W_ho + self.b_o)
+
+        c_next = f * c + i * g
+        h_next = o * torch.tanh(c_next)
+
+        return h_next, c_next
+
+
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1):
+        super(LSTM, self).__init__()
+        self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.lstm_cells = nn.ModuleList(
+            [LSTMCell(input_size if i == 0 else hidden_size,
+                            hidden_size) for i in range(num_layers)]
+        )
+        self.fc = nn.Linear(hidden_size, output_size)
 
-        self.lstm = nn.LSTM(input_size, hidden_size,
-                            num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_size, output_size)
+    def forward(self, input, hidden, cell):
+        h, c = hidden, cell
+        outputs = []
+        for x in input.split(1, dim=1):  # Split the input along the sequence dimension
+            x = x.squeeze(1)
+            for i, lstm_cell in enumerate(self.lstm_cells):
+                h[i], c[i] = lstm_cell(x, (h[i], c[i]))
+                x = h[i]
+            outputs.append(x.unsqueeze(1))
+        lstm_out = torch.cat(outputs, dim=1)
+        output = self.fc(lstm_out)
+        return output, h, c
 
-    def forward(self, input, hidden):
-        out, hidden = self.lstm(input, hidden)
-        out = self.linear(out)
-
-        return out, hidden
-
-    def init_hidden(self, num_layers, batch_size):
-        hidden = (torch.zeros((num_layers, batch_size, self.hidden_size), device=device),
-                  torch.zeros((num_layers, batch_size, self.hidden_size), device=device))
-        return hidden
+    def initHidden(self, batch_size=1):
+        hidden = [torch.zeros(batch_size, self.hidden_size)
+                  for _ in range(self.num_layers)]
+        cell = [torch.zeros(batch_size, self.hidden_size)
+                for _ in range(self.num_layers)]
+        return hidden, cell
 
 
-def load_data(filepath):
-    with open(filepath, 'r') as f:
-        data = f.read()
-    return np.array(list(data))
+def load_data(tokenizer):
+    data = torch.tensor(
+        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        vocab = pickle.load(f)
+    return data, vocab
 
 
-def synthesize(model, hprev, x0, n, temperature):
-    h_t = hprev
-    x_t = x0.to(device)  # Make sure x0 is on the right device
+def load_word2vec(use_fewer_dimensions=False):
+    word2vec_path = "token_data/text_vector.npy"
+    model = Word2Vec.load("token_data/vector.model")
+    word2vec = np.load("token_data/word_vectors.npy")
+    words = np.load("token_data/words.npy")
+    word_set = np.load("token_data/word_set.npy")
+    with open("token_data/vocabulary_vector.pkl", "rb") as f:
+        word_to_index = pickle.load(f)
+    return model, word2vec, words, word_set, word_to_index
 
-    Y = torch.zeros((n, model.input_size), dtype=torch.float, device=device)
 
-    for t in range(n):
-        output, h_t = model(x_t, h_t)
-        # Move tensor to CPU for numpy operations
-        p_t = output.squeeze().detach().cpu().numpy()
-        p_t = np.exp(p_t / temperature)
-        p_t /= np.sum(p_t)
+def test_word2vec_seq(model, word2vec_data, words):
+    for i in range(len(words)):
+        assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
 
-        # Random sampling
-        i = np.random.choice(len(p_t), p=p_t)
 
-        # Update Y and x_t for next iteration
-        Y[t, i] = 1
-        x_t = torch.zeros_like(x0, device=device)
-        x_t[0, 0, i] = 1
-
+def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_to_index):
+    Y = torch.zeros((seq_length, word_set.shape[0]))
+    i = 0
+    for j in range(start_index, end_index):
+        index = word_to_index[words[j]]
+        Y[i, index] = 1
+        i += 1
     return Y
 
 
-def split_data(book_data):
-    train_size = config['train_size']
-    val_size = config['val_size']
-    test_size = config['test_size']
-    split_idx_1 = int(train_size*len(book_data))
-    split_idx_2 = int((train_size + val_size) * len(book_data))
-    train_data = book_data[:split_idx_1]
-    val_data = book_data[split_idx_1:split_idx_2]
-    test_data = book_data[split_idx_2:]
-    return train_data, val_data, test_data
+def synthesize(lstm, hprev, cprev, x0, n):
+    h_t, c_t = hprev, cprev
+    x_t = x0
+    Y = []
+
+    for t in range(n):
+        
+        output, h_t, c_t = lstm(x_t.unsqueeze(0), h_t, c_t)
+        p_t = torch.softmax(output.squeeze(0), dim=1).detach().cpu().numpy()
+        p_t = p_t.flatten()  # Flatten to 1D array
+        p_t = p_t / np.sum(p_t)
+
+        # generate x_t
+        ix = np.random.choice(len(p_t), p=p_t)
+        Y.append(ix)
+
+        # Update x_t for next iteration
+        x_t = torch.zeros_like(x0)
+        x_t[0, ix] = 1
+
+    return Y
+
+def nucleus_sampling(model, h, cprev, x, theta, max_new_tokens):
+
+        h_t = h
+        x_t = x
+        c_t = cprev
+        Y = torch.zeros((max_new_tokens), dtype=float)
+        
+        for t in range(max_new_tokens):
+            
+            output, h_t, c_t = model(x_t.unsqueeze(0), h_t, c_t)
+            probs = torch.nn.functional.softmax(output.squeeze(0), dim=-1)
+            
+            sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+            
+            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+            
+            cutoff_index = torch.where(cumulative_probs[0] >= theta)[0][0] + 1
+            
+            sorted_probs[0][cutoff_index:] = 0
+            sorted_probs = sorted_probs / torch.sum(sorted_probs)
+            
+            next_token = torch.multinomial(sorted_probs, num_samples=1)
+
+            x_t = torch.zeros_like(x0)
+            x_t[0, sorted_indices[0][next_token][0].item()] = 1
+        
+            Y[t] = sorted_indices[0][next_token][0].item()
+    
+        return Y.tolist()
 
 
-def get_seq(data, seq_length, K, batch_size, idx, char_to_ind):
-    X = torch.zeros((batch_size, config['seq_length'], K),
-                    dtype=torch.float32, device=device)
-    Y = torch.zeros((batch_size, seq_length, K),
-                    dtype=torch.float32, device=device)
-
-    for batch in range(batch_size):
-        X_chars = data[idx:idx+seq_length]
-        Y_chars = data[idx+1:idx+seq_length+1]
-        # One-hot encode inputs and outputs
-        for t, (x_char, y_char) in enumerate(zip(X_chars, Y_chars)):
-            X[batch, t, char_to_ind[x_char]] = 1
-            Y[batch, t, char_to_ind[y_char]] = 1
-
-    X.to(device)
-    Y.to(device)
-
-    return X, Y
+def decode(ids, vocab):
+    if config['tokenizer'] == 'char':
+        return "".join([vocab[idx] for idx in ids])
+    else:
+        tokens = b"".join(vocab[idx] for idx in ids)
+        text = tokens.decode("utf-8", errors="replace")
+        return text
 
 
-def get_loss(output, Y, batch_size, seq_length, K, criterion):
-    unbatched_output = torch.reshape(output, (batch_size * seq_length, K))
-    unbatched_output_Y = torch.reshape(Y, (batch_size * seq_length, K))
-    # Backward pass
-    loss = criterion(unbatched_output, unbatched_output_Y)
-    loss = torch.sum(loss) / batch_size / seq_length
-    return loss
+def visualize_tokens(token_indices, vocab):
+    output_bytes = [vocab[idx] for idx in token_indices]
+    output_bytes = list(map(lambda x: x.decode(
+        "utf-8", errors="replace"), output_bytes))
+    print(output_bytes)
 
+def get_batch(split, i):
+    data = train_data if split == 'train' else val_data
+    X_inds = data[i:i+config['seq_length']]
+    Y_inds = data[i+1:i+config['seq_length']+1]
+
+    X = torch.zeros((config['seq_length'], K),
+                    dtype=torch.float, device=device)
+    Y = torch.zeros((config['seq_length'], K),
+                    dtype=torch.float, device=device)
+
+    for t, (x_char, y_char) in enumerate(zip(X_inds, Y_inds)):
+        X[t, x_char] = 1
+        Y[t, y_char] = 1
+    return X,Y
+
+def load_spell_checker(input_text):
+    spell_checker = SpellChecker(language=None)
+    known = re.sub(r'[^a-zA-Z\s]', ' ', input_text).split()
+    spell_checker.word_frequency.load_words(known)
+    return spell_checker
+
+def evaluate_spelling(spell_checker, generated_text):
+    words = re.sub(r'[^a-zA-Z\s]', ' ', generated_text).split()
+    misspelled = spell_checker.unknown(words)
+    total_words = len(words)
+    correctly_spelled_words = total_words - len(misspelled)
+    correctly_spelled_percentage = (correctly_spelled_words / total_words) * 100
+    return correctly_spelled_percentage
+
+def load_model(PATH):
+    if (os.path.exists(PATH)):
+        print("Loading model")
+        model.load_state_dict(torch.load(f"{PATH}/model.pth"))
+        train_loss_values = torch.load(f"{PATH}/train_losses.pth")
+        val_loss_values = torch.load(f"{PATH}/val_losses.pth")
+        train_perplexity = torch.load(f"{PATH}/train_perplexity.pth")
+        val_perplexity = torch.load(f"{PATH}/val_perplexity.pth")
+        return True, train_loss_values, val_loss_values , train_perplexity, val_perplexity
+    else:
+        return False, [], [], [], []
+    
+def save_model(PATH,train_loss_values,val_loss_values,train_perplexity, val_perplexity):
+    os.mkdir(PATH) 
+    torch.save(model.state_dict(), f"{PATH}/model.pth")
+    torch.save(torch.tensor(train_loss_values), f"{PATH}/train_losses.pth")
+    torch.save(torch.tensor(val_loss_values), f"{PATH}/val_losses.pth")
+    torch.save(torch.tensor(train_perplexity), f"{PATH}/train_perplexity.pth")
+    torch.save(torch.tensor(val_perplexity), f"{PATH}/val_perplexity.pth")
+
+@torch.no_grad()
+def estimate_metrics():
+    out = {}
+    perplexity = {}
+    model.eval()
+    hidden, cell = model.initHidden(batch_size=1)
+    
+    for split in ['train', 'val']:
+        losses = torch.zeros(config['eval_iters'])
+        perplexity_metric = Perplexity()
+        if split == "train":
+            start_idx = np.random.randint(len(train_data))-config['eval_iters']
+        elif split == "val":
+            start_idx = np.random.randint(len(val_data))-config['eval_iters']
+        for k in range(config['eval_iters']):
+            X, Y = get_batch(split,start_idx + k)
+            hidden, cell = model.initHidden(batch_size=1)
+            
+            output, hidden, cell = model(X.unsqueeze(0), hidden, cell)
+            loss = criterion(output.squeeze(0), Y)
+            losses[k] = loss.item()
+            labels = torch.argmax(Y, dim=1)
+            perplexity_metric.update(output, labels.unsqueeze(0))
+        out[split] = losses.mean().item()
+        perplexity[split] = perplexity_metric.compute().item()
+    model.train()
+    return out, perplexity
 
 # Set seed
 torch.manual_seed(0)
@@ -114,103 +273,130 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-# TODO: Rewrite so that all encodings are supported
-start_time = time.time()
-book_data = load_data('./data/goblet_book.txt')
-book_chars = np.unique(book_data)
-char_to_ind = {char: idx for idx, char in enumerate(book_chars)}
-ind_to_char = {idx: char for idx,
-               char in enumerate(book_chars)}
+if config['tokenizer'] == 'vector':
+    model, word2vec, words, word_set, word_to_index = load_word2vec(
+        use_fewer_dimensions=False)
+    test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
+    K = word2vec.shape[0]
+    num_words = word2vec.shape[1]
+    output_size = word_set.shape[0]
+else:
+    data, vocab = load_data(config['tokenizer'])
+    n = int(len(data) * config['train_size'])
+    train_data = data[:n]
+    val_data = data[n:]
+    K = len(vocab.keys())
+    num_words = len(train_data)
 
-train_data, val_data, test_data = split_data(book_data)
+model = LSTM(K, config['m'], K, num_layers=config.get(
+    'num_layers', 1)).to(device)
 
-K = len(book_chars)
-
-# TODO: Behöver en lägre lr än i min egen implementation.
-# Gissar att RMSprop är annorlunda på något sätt. Den lr för min egen implementation var 0.001.
-
-model = CharLSTM(K, config['hidden_layer_size'], K,
-                 config['num_layers']).to(device)
-
-criterion = nn.CrossEntropyLoss(reduction='none')
-
-# TODO: Undersök om detta är korrekt.
+criterion = nn.CrossEntropyLoss(reduction='mean')
 optimizer = optim.RMSprop(model.parameters(), lr=config['learning_rate'])
 
 smooth_loss = None
-smooth_val_loss = None
-
-losses = []
-val_losses = []
-iterations = []
-
 iteration = 0
 
-while True:
-    model.zero_grad()
-    hidden = model.init_hidden(config['num_layers'], config['batch_size'])
+test_file = re.findall(r'\.\/tests\/(\w+)\.json', sys.argv[1])[0]
+PATH = f"./model_data/{test_file}"
+model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
 
-    for i in range(0, len(train_data) - (config['seq_length'] + config['batch_size'] - 1), config['seq_length'] + config['batch_size'] - 1):
-        # Prepare inputs and targets
+if (not model_loaded):
+    while True:
+        hidden, cell = model.initHidden(batch_size=1)
+        for i in range(0, num_words - config['seq_length'], config['seq_length']):
+            if config['tokenizer'] == 'vector':
+                X = word2vec[:, i:i+25].T
+                X = torch.tensor(X, device=device)
+                Y = construct_Y_batch(
+                    start_index=i+1,
+                    end_index=i+26,
+                    words=words,
+                    word_set=word_set,
+                    seq_length=config['seq_length'],
+                    word_to_index=word_to_index
+                ).to(device)
+            else:
+                X,Y = get_batch("train", i)
 
-        X, Y = get_seq(train_data, config['seq_length'], K,
-                       config['batch_size'], i, char_to_ind)
+            hidden, cell = model.initHidden(batch_size=1)
+            
+            output, hidden, cell = model(X.unsqueeze(0), hidden, cell)
 
-        # Forward pass
-        output, hidden = model(X, hidden)
+            loss = criterion(output.squeeze(0), Y)
 
-        loss = get_loss(
-            output, Y, config['batch_size'], config['seq_length'], K, criterion)
+            hidden = [h.detach() for h in hidden]
+            cell = [c.detach() for c in cell]
 
-        # get validation loss
-        max_val_idx = len(val_data) - \
-            (config['seq_length'] + config['batch_size'] - 1)
-        X_val, Y_val = get_seq(val_data, config['seq_length'], K, config['batch_size'], np.random.randint(
-            max_val_idx), char_to_ind)
-        hiddden_val = model.init_hidden(
-            config['num_layers'], config['batch_size'])
-        output_val, _ = model(X_val, hiddden_val)
-        val_loss = get_loss(output_val, Y_val, config['batch_size'],
-                            config['seq_length'], K, criterion)
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                model.parameters(), config['gradient_clip'])
+            optimizer.step()
 
-        # print(loss)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            model.parameters(), config['gradient_clip'])
-        optimizer.step()
-        hidden = tuple([each.data for each in hidden])
+            if smooth_loss is None:
+                smooth_loss = loss
+            else:
+                smooth_loss = config['smooth_loss_factor'] * \
+                    smooth_loss + (1 - config['smooth_loss_factor']) * loss
 
-        if smooth_loss is None:
-            smooth_loss = loss
-            smooth_val_loss = val_loss
-        else:
-            smooth_loss = config['smooth_loss_factor'] * \
-                smooth_loss + (1 - config['smooth_loss_factor']) * loss
-            smooth_val_loss = config['smooth_loss_factor'] * \
-                smooth_val_loss + (1 - config['smooth_loss_factor']) * val_loss
+            if (iteration) % config['log_every'] == 0:
+                losses, perplexity = estimate_metrics()
+                train_loss_values.append(losses['train'])
+                val_loss_values.append(losses['val'])
+                train_perplexity.append(perplexity['train'])
+                val_perplexity.append(perplexity['val'])
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                
+            if iteration % config['synthesize_every'] == 0:
+                x0 = X[0, :].reshape(1, -1)
+                hprev, cprev = model.initHidden(batch_size=1)
+                Y_synth = synthesize(model, hprev, cprev, x0, 200)
+                print(decode(Y_synth, vocab))
 
-        if (iteration) % config['log_every'] == 0:
-            losses.append(smooth_loss)
-            val_losses.append(smooth_val_loss)
-            iterations.append(iteration)
-            print(f'Iter {iteration:7d}. Smooth loss {smooth_loss:7.2f}. Loss {
-                  loss:7.2f}. Smooth val loss {smooth_val_loss:7.2f}. Val loss {val_loss:7.2f}.')
+            if iteration >= config['n_iters']:
+                break
 
-        if iteration % config['syntesize_every'] == 0:
-            x0 = torch.zeros(1, 1, K)
-            x0[0, 0, np.random.randint(K)] = 1
-            hprev = model.init_hidden(config['num_layers'], 1)
-            Y_synth = synthesize(model, hprev, x0, 200, config['temperature'])
-
-            txt = ''.join([ind_to_char[torch.argmax(y).item()]
-                           for y in Y_synth])
-
-            # print(txt)
+            iteration += 1
 
         if iteration >= config['n_iters']:
             break
+    losses, perplexity = estimate_metrics()
+    train_loss_values.append(losses['train'])
+    val_loss_values.append(losses['val'])
+    train_perplexity.append(perplexity['train'])
+    val_perplexity.append(perplexity['val'])
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    save_model(PATH, train_loss_values, val_loss_values, train_perplexity, val_perplexity)
 
-        iteration += 1
+print(f'Final train loss: {train_loss_values[-1]:.4f}')
+print(f'Final val loss: {val_loss_values[-1]:.4f}')
+print(f'Final train perplexity: {train_perplexity[-1]:.4f}')
+print(f'Final val perplexity: {val_perplexity[-1]:.4f}')
 
-    if iteration >= config['n_iters']:
-        break
+# Generate text
+print(f'Synthesizing text...')
+
+X = torch.zeros((config['seq_length'], K),dtype=torch.float, device=device)
+X[0,0] = 1
+x0 = X[0, :].reshape(1, -1)
+hprev, cprev = model.initHidden(batch_size=1)
+
+if config['sampling'] == "temp":
+    Y_synth = synthesize(model, hprev, cprev, x0, config['max_new_tokens'])
+    sample = decode(Y_synth, vocab)
+    
+elif config['sampling'] == "nucleus":
+    Y_synth = nucleus_sampling(model, hprev,cprev, x0, theta=config['nucleus'], max_new_tokens=config['max_new_tokens'])
+    sample = decode(Y_synth, vocab)
+    
+print(sample)
+with open (f"{PATH}/text_sample.txt", "w") as file:
+    file.write(sample)
+
+with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
+    text = f.read()
+spell_checker = load_spell_checker(text)
+spelling_accuracy = evaluate_spelling(spell_checker, sample)
+with open (f"{PATH}/spelling_accuracy.txt", "w") as file:
+    file.write(str(spelling_accuracy))
