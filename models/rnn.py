@@ -58,9 +58,6 @@ def load_data(tokenizer):
 
 
 def load_word2vec():
-    # TODO: Tog bort smaller vector här. Tänker att vi ändå vill köra samma när vi skapar resultat
-    word2vec_path = "token_data/text_vec.npy"
-
     # The gensim model.
     model = Word2Vec.load("token_data/vec_gensim.model")
 

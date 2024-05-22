@@ -1,0 +1,23 @@
+{
+    "model": "lstm",
+    "tokenizer": "vec",
+    "m": 100,
+    "learning_rate": 0.001,
+    "seq_length": 25,
+    "batch_size": 1,
+    "gradient_clip": 5,
+    "num_layers": 2,
+    "train_size": 0.8,
+    "val_size": 0.1,
+    "test_size": 0.1,
+    "smooth_loss_factor": 0.999,
+    "n_iters": 5000,
+    "log_every": 1000,
+    "synthesize_every": 10000,
+    "eval_iters":  100,
+    "sampling": "nucleus",
+    "temperature": 0.9,
+    "nucleus": 0.9,
+    "max_new_tokens": 200
+  }
+  
