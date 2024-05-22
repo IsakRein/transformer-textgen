@@ -287,7 +287,7 @@ model = DecoderOnlyTransformer(len(vocab)).to(device)
 optimizer = torch.optim.AdamW(
     model.parameters(), lr=config['learning_rate'], weight_decay=config['lambda'])
 
-test_file = re.findall(r'\.\/tests\/(\w+)\.json', sys.argv[1])[0]
+test_file = re.findall(r'tests\/(\w+)\.json', sys.argv[1])
 PATH = f"./model_data/{test_file}"
 model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
 
