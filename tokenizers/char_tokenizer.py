@@ -3,7 +3,7 @@ import operator
 import numpy as np
 import pickle
 
-with open("data/goblet_book.txt", "r") as f:
+with open("goblet_book.txt", "r") as f:
     text = f.read()
 
 chars = sorted(list(set(text)))

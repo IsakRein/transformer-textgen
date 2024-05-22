@@ -11,7 +11,7 @@ labeled "From Karpathy". The other functions are rewrites/own implementations
 of functions from that repository.
 """
 
-with open("data/goblet_book.txt", "r") as f:
+with open("goblet_book.txt", "r") as f:
    text = f.read()
 
 def get_stats_2D(bytes_list):
