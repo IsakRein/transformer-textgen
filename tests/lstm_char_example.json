@@ -4,7 +4,7 @@
   "m": 100,
   "learning_rate": 0.001,
   "seq_length": 25,
-  "batch_size": 1,
+  "batch_size": 2,
   "gradient_clip": 5,
   "num_layers": 2,
   "train_size": 0.8,

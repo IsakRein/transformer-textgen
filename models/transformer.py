@@ -73,7 +73,7 @@ def estimate_metrics():
             X, Y = get_batch(split)
             outputs, loss = model(X, Y)
             losses[k] = loss.item()
-            perplexity_metric.update(outputs.unsqueeze(0), Y)
+            perplexity_metric.update(outputs.unsqueeze(0), Y.view(1, config['batch_size'] * config['seq_length']))
         out[split] = losses.mean().item()
         perplexity[split] = perplexity_metric.compute().item()
     model.train()
@@ -336,8 +336,7 @@ print(sample)
 with open (f"{PATH}/text_sample.txt", "w") as file:
     file.write(sample)
 
-with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+
 spell_checker = SpellChecker()
 spelling_accuracy = evaluate_spelling(spell_checker, sample)
 with open (f"{PATH}/spelling_accuracy.txt", "w") as file:

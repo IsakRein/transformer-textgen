@@ -36,7 +36,7 @@ for tokenizer in [
     if f'train_vocabulary_{tokenizer}.pkl' not in files:
         print(f'Running {tokenizer} tokenizer')
         #os.system(f'venv/bin/python tokenizers/{tokenizer}_tokenizer.py')
-        os.system(f'python tokenizers/{tokenizer}_tokenizer.py')
+        os.system(f'python3 tokenizers/{tokenizer}_tokenizer.py')
 
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
@@ -44,4 +44,5 @@ with open(sys.argv[1], 'r') as f:
 # Run model
 print(f'\nRunning {config["model"]} model with config {sys.argv[1]}')
 print('-' * 50)
-os.system(f'./bin/python models/{config["model"]}.py {sys.argv[1]}')
+#os.system(f'venv/bin/python models/{config["model"]}.py {sys.argv[1]}')
+os.system(f'python models/{config["model"]}.py {sys.argv[1]}')
