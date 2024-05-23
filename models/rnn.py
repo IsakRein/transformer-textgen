@@ -317,8 +317,7 @@ else:
     n = int(len(train_data) * config['train_size'])
 
 output_size = len(vocab.keys())
-num_words = train_data.shape[1] if config['tokenizer'] == 'vec' else len(
-    train_data)
+num_words = train_data.shape[1] if config['tokenizer'] == 'vec' else len(train_data)
 
 model = RNN(K, config['m'], output_size).to(device)
 
@@ -331,8 +330,7 @@ iteration = 0
 test_files = re.findall(r'tests\/(\w+)\.json', sys.argv[1])
 PATH = f"./model_data/{test_files[0]}" if test_files else ""
 
-model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(
-    PATH)
+model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(PATH)
 
 if not model_loaded:
     while True:
@@ -365,8 +363,7 @@ if not model_loaded:
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['syntesize_every'] == 0:
                 x0 = get_batch("train")[0][0].unsqueeze(0)
@@ -394,10 +391,8 @@ if not model_loaded:
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
-    save_model(PATH, train_loss_values, val_loss_values,
-               train_perplexity, val_perplexity)
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    save_model(PATH, train_loss_values, val_loss_values,train_perplexity, val_perplexity)
 
 
 print(f'Final train loss: {train_loss_values[-1]:.4f}')
