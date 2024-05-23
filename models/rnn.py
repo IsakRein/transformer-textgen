@@ -365,8 +365,7 @@ if not model_loaded:
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['syntesize_every'] == 0:
                 x0 = get_batch("train")[0][0].unsqueeze(0)
@@ -394,8 +393,7 @@ if not model_loaded:
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
     save_model(PATH, train_loss_values, val_loss_values,
                train_perplexity, val_perplexity)
 
@@ -422,8 +420,7 @@ if config['sampling'] == "temp":
         sample = decode(sample, vocab)
 
 elif config['sampling'] == "nucleus":
-    Y_synth = nucleus_sampling(
-        model, hprev, x0, theta=config['nucleus'], max_new_tokens=config['max_new_tokens'])
+    Y_synth = nucleus_sampling(model, hprev, x0, theta=config['nucleus'], max_new_tokens=config['max_new_tokens'])
     sample = decode(Y_synth, vocab)
 
 print(sample)
