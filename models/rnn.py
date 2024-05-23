@@ -262,14 +262,10 @@ def get_batch(split, i):
         Y[t, y_char] = 1
     return X,Y
 
-def load_spell_checker(input_text):
-    spell_checker = SpellChecker(language=None)
-    known = re.sub(r'[^a-zA-Z\s]', ' ', input_text).split()
-    spell_checker.word_frequency.load_words(known)
-    return spell_checker
+
 
 def evaluate_spelling(spell_checker, generated_text):
-    words = re.sub(r'[^a-zA-Z\s]', ' ', generated_text).split()
+    words = re.findall(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b", generated_text)
     misspelled = spell_checker.unknown(words)
     total_words = len(words)
     correctly_spelled_words = total_words - len(misspelled)
@@ -415,7 +411,7 @@ with open (f"{PATH}/text_sample.txt", "w") as file:
 
 with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
     text = f.read()
-spell_checker = load_spell_checker(text)
+spell_checker = SpellChecker()
 spelling_accuracy = evaluate_spelling(spell_checker, sample)
 with open (f"{PATH}/spelling_accuracy.txt", "w") as file:
     file.write(str(spelling_accuracy))
