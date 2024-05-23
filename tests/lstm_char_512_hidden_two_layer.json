@@ -15,9 +15,9 @@
   "log_every": 1000,
   "synthesize_every": 10000,
   "eval_iters":  100,
-  "sampling": "nucleus",
-  "temperature": 0.9,
-  "nucleus": 0.9,
+  "sampling": "temp",
+  "temperature": 0.3,
+  "nucleus": 0.2,
   "max_new_tokens": 500
 }
 
