@@ -30,8 +30,8 @@ files = os.listdir('./token_data')
 for tokenizer in [
     'char',
     #'vector', Remove vector since it causes memory issues due to the sheer amount of words. 
-    'bpe',
-    'bpe4'
+    #'bpe',
+    #'bpe4'
 ]:
     # Run tokenizer
     if f'train_vocabulary_{tokenizer}.pkl' not in files:
