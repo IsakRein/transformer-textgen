@@ -2,12 +2,12 @@
   "model": "transformer",
   "tokenizer": "char",
   "batch_size": 16,
-  "seq_length": 25,
+  "seq_length": 64,
   "n_iters": 10000,
   "learning_rate": 0.001,
-  "n_embd": 64,
-  "n_head": 4,
-  "n_layer": 12,
+  "n_embd": 512,
+  "n_head": 8,
+  "n_layer": 6,
   "dropout": 0.1,
   "feed_forward_multiplier": 4,
   "max_new_tokens": 200,
@@ -16,5 +16,5 @@
   "syntesize_every": 10000,
   "train_size": 0.9,
   "lambda": 0.001,
-  "temperature": 0.9
+  "temperature": 0.9 
 }
