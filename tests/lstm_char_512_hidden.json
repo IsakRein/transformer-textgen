@@ -11,7 +11,7 @@
   "val_size": 0.1,
   "test_size": 0.1,
   "smooth_loss_factor": 0.999,
-  "n_iters": 10000,
+  "n_iters": 25000,
   "log_every": 1000,
   "synthesize_every": 10000,
   "eval_iters":  100,
