@@ -387,7 +387,7 @@ model = LSTM(K, config['m'], output_size,
              num_layers=config.get('num_layers', 1)).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean').to(device)
-optimizer = optim.RMSprop(model.parameters(), lr=config['learning_rate'])
+optimizer = optim.AdamW(model.parameters(), lr=config['learning_rate'])
 
 smooth_loss = None
 iteration = 0

@@ -141,7 +141,6 @@ def nucleus_sampling(rnn, h, x, theta, max_new_tokens):
 
 
 def synthesize(rnn, hprev, x0, n):
-    print(x0.shape)
     h_t = hprev
     x_t = x0
     Y = torch.zeros((n, rnn.input_size), dtype=torch.float32, device=device)
@@ -323,7 +322,7 @@ num_words = train_data.shape[1] if config['tokenizer'] == 'vec' else len(
 model = RNN(K, config['m'], output_size).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
-optimizer = optim.RMSprop(model.parameters(), lr=config['learning_rate'])
+optimizer = optim.AdamW(model.parameters(), lr=config['learning_rate'])
 
 smooth_loss = None
 iteration = 0
