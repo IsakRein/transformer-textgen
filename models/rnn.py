@@ -164,6 +164,7 @@ def nucleus_sampling(rnn, h, x, theta, max_new_tokens):
 
 
 def synthesize(rnn, hprev, x0, n):
+    print(x0.shape)
     h_t = hprev
     x_t = x0
     Y = torch.zeros((n, rnn.input_size), dtype=torch.float32)
@@ -269,7 +270,7 @@ def estimate_metrics():
                 config['batch_size'] * config['seq_length'], K))
             losses[k] = loss.item()
             labels = torch.argmax(Y, dim=2)
-
+            
             perplexity_metric.update(output.view(
                 config['batch_size'], config['seq_length'], K), labels)
         out[split] = losses.mean().item()

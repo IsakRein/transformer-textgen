@@ -88,8 +88,8 @@ class LSTM(nn.Module):
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
-    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
     return data, vocab
 
@@ -123,12 +123,14 @@ def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_
 def synthesize(lstm, hprev, cprev, x0, n):
     h_t, c_t = hprev, cprev
     x_t = x0
+    
     Y = []
 
     for t in range(n):
         
-        output, h_t, c_t = lstm(x_t.unsqueeze(0), h_t, c_t)
-        p_t = torch.softmax(output.squeeze(0), dim=1).detach().cpu().numpy()
+        output, h_t, c_t = lstm(x_t, h_t, c_t)
+        print(output.shape)
+        p_t = torch.softmax(output, dim=1).detach().cpu().numpy()
         p_t = p_t.flatten()  # Flatten to 1D array
         p_t = p_t / np.sum(p_t)
 
@@ -188,20 +190,27 @@ def visualize_tokens(token_indices, vocab):
         "utf-8", errors="replace"), output_bytes))
     print(output_bytes)
 
-def get_batch(split, i):
+def get_batch(split):
     data = train_data if split == 'train' else val_data
-    X_inds = data[i:i+config['seq_length']]
-    Y_inds = data[i+1:i+config['seq_length']+1]
 
-    X = torch.zeros((config['seq_length'], K),
-                    dtype=torch.float, device=device)
-    Y = torch.zeros((config['seq_length'], K),
-                    dtype=torch.float, device=device)
+    X = torch.zeros(
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
+    Y = torch.zeros(
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
 
-    for t, (x_char, y_char) in enumerate(zip(X_inds, Y_inds)):
-        X[t, x_char] = 1
-        Y[t, y_char] = 1
-    return X,Y
+    for batch in range(config['batch_size']):
+        idx = torch.randint(
+            len(data) - config['seq_length'], (1,))
+
+        X_encoded = data[idx:idx+config['seq_length']]
+        Y_encoded = data[idx+1:idx+config['seq_length']+1]
+
+        # One-hot encode inputs and outputs
+        for t, (x, y) in enumerate(zip(X_encoded, Y_encoded)):
+            X[batch, t, x] = 1
+            Y[batch, t, y] = 1
+
+    return X, Y
 
 def load_spell_checker(input_text):
     spell_checker = SpellChecker(language=None)
@@ -252,14 +261,14 @@ def estimate_metrics():
         elif split == "val":
             start_idx = np.random.randint(len(val_data))-config['eval_iters']
         for k in range(config['eval_iters']):
-            X, Y = get_batch(split,start_idx + k)
+            X, Y = get_batch(split)
             hidden, cell = model.initHidden(batch_size=1)
             
             output, hidden, cell = model(X.unsqueeze(0), hidden, cell)
             loss = criterion(output.squeeze(0), Y)
             losses[k] = loss.item()
-            labels = torch.argmax(Y, dim=1)
-            perplexity_metric.update(output, labels.unsqueeze(0))
+            labels = torch.argmax(Y, dim=-1)
+            perplexity_metric.update(output.squeeze(0), labels)
         out[split] = losses.mean().item()
         perplexity[split] = perplexity_metric.compute().item()
     model.train()
@@ -317,7 +326,7 @@ if (not model_loaded):
                     word_to_index=word_to_index
                 ).to(device)
             else:
-                X,Y = get_batch("train", i)
+                X,Y = get_batch("train")
 
             hidden, cell = model.initHidden(batch_size=1)
             
@@ -349,7 +358,7 @@ if (not model_loaded):
                 print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
                 
             if iteration % config['synthesize_every'] == 0:
-                x0 = X[0, :].reshape(1, -1)
+                x0 = get_batch("train")[0][0].unsqueeze(0)
                 hprev, cprev = model.initHidden(batch_size=1)
                 Y_synth = synthesize(model, hprev, cprev, x0, 200)
                 print(decode(Y_synth, vocab))
