@@ -79,20 +79,20 @@ class LSTM(nn.Module):
         return output, h, c
 
     def initHidden(self, batch_size=1):
-        hidden = [torch.zeros(batch_size, self.hidden_size)
+        hidden = [torch.zeros(batch_size, self.hidden_size, device=device)
                   for _ in range(self.num_layers)]
-        cell = [torch.zeros(batch_size, self.hidden_size)
+        cell = [torch.zeros(batch_size, self.hidden_size, device=device)
                 for _ in range(self.num_layers)]
         return hidden, cell
 
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
+        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long, device=device)
     with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
     val_data = torch.tensor(
-        np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+        np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long, device=device)
     return data, vocab, val_data
 
 
@@ -145,7 +145,7 @@ def synthesize_word2vec(lstm, hprev, cprev, x0, n, vocab, word2vec_model):
     for t in range(n):
         output, h_t, c_t = lstm(x_t, h_t, c_t)
 
-        p_t = output.detach().numpy()
+        p_t = output.detach().cpu().numpy()
         p_t = p_t[0, -1, :]
         p_t = np.exp(p_t / config['temperature'])
         p_t = p_t / np.sum(p_t)
@@ -158,7 +158,6 @@ def synthesize_word2vec(lstm, hprev, cprev, x0, n, vocab, word2vec_model):
         ix = ixs[0]
 
         # Update x_t for next iteration
-        x_tplus1 = torch.zeros_like(x0)
         x_tplus1 = torch.zeros_like(x0)
         x_tplus1[:, 0:-1, :] = x_t[:, 1:, :]
         x_tplus1[0, -1, ix] = 1
@@ -178,7 +177,7 @@ def synthesize(lstm, hprev, cprev, x0, n):
     for t in range(n):
         output, h_t, c_t = lstm(x_t, h_t, c_t)
 
-        p_t = output.detach().numpy()
+        p_t = output.detach().cpu().numpy()
         p_t = p_t[0, -1, :]
         p_t = np.exp(p_t / config['temperature'])
         p_t = p_t / np.sum(p_t)
@@ -190,7 +189,6 @@ def synthesize(lstm, hprev, cprev, x0, n):
         ix = ixs[0]
 
         # Update x_t for next iteration
-        x_tplus1 = torch.zeros_like(x0)
         x_tplus1 = torch.zeros_like(x0)
         x_tplus1[:, 0:-1, :] = x_t[:, 1:, :]
         x_tplus1[0, -1, ix] = 1
@@ -206,7 +204,7 @@ def nucleus_sampling(model, h, cprev, x, theta, max_new_tokens):
     h_t = h
     x_t = x
     c_t = cprev
-    Y = torch.zeros((max_new_tokens), dtype=float)
+    Y = torch.zeros((max_new_tokens), dtype=float, device=device)
 
     for t in range(max_new_tokens):
 
@@ -253,9 +251,9 @@ def get_batch(split):
     data = train_data if split == 'train' else val_data
 
     X = torch.zeros(
-        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float, device=device)
     Y = torch.zeros(
-        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float, device=device)
 
     for batch in range(config['batch_size']):
         idx = torch.randint(
@@ -268,9 +266,6 @@ def get_batch(split):
         for t, (x, y) in enumerate(zip(X_encoded, Y_encoded)):
             X[batch, t, x] = 1
             Y[batch, t, y] = 1
-
-    X = X.to(device)
-    Y = Y.to(device)
 
     return X, Y
 
@@ -322,8 +317,8 @@ def estimate_metrics():
     hidden, cell = model.initHidden(config['batch_size'])
 
     for split in ['train', 'val']:
-        losses = torch.zeros(config['eval_iters'])
-        perplexity_metric = Perplexity()
+        losses = torch.zeros(config['eval_iters'], device=device)
+        perplexity_metric = Perplexity(device=device)
         if split == "train":
             if config['tokenizer'] == 'vec':
                 start_idx = np.random.randint(
@@ -374,11 +369,9 @@ if config['tokenizer'] == 'vec':
     K = data.shape[0]
     n = int(data.shape[1] * config['train_size'])
     train_data = data[:, :n]
-    train_data = torch.from_numpy(train_data)
-    train_data = train_data.to(torch.float)
+    train_data = torch.from_numpy(train_data).to(torch.float).to(device)
     val_data = data[:, :n]
-    val_data = torch.from_numpy(val_data)
-    val_data = val_data.to(torch.float)
+    val_data = torch.from_numpy(val_data).to(torch.float).to(device)
 else:
     train_data, vocab, val_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
@@ -390,10 +383,10 @@ if config['tokenizer'] == 'vec':
 else:
     num_words = len(train_data)
 
-model = LSTM(K, config['m'], output_size, num_layers=config.get(
-    'num_layers', 1)).to(device)
+model = LSTM(K, config['m'], output_size,
+             num_layers=config.get('num_layers', 1)).to(device)
 
-criterion = nn.CrossEntropyLoss(reduction='mean')
+criterion = nn.CrossEntropyLoss(reduction='mean').to(device)
 optimizer = optim.RMSprop(model.parameters(), lr=config['learning_rate'])
 
 smooth_loss = None
@@ -444,8 +437,8 @@ if (not model_loaded):
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"""step {iteration}: train loss {losses['train']:.4f}, val loss {
+                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}""")
 
             if iteration % config['synthesize_every'] == 0:
                 # TODO: Fixa synthesize av word2vec, kolla på tidigare commits hur det kan göras
@@ -466,8 +459,8 @@ if (not model_loaded):
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    print(f"""step {iteration}: train loss {losses['train']:.4f}, val loss {
+          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}""")
     save_model(PATH, train_loss_values, val_loss_values,
                train_perplexity, val_perplexity)
 
@@ -479,7 +472,7 @@ print(f'Final val perplexity: {val_perplexity[-1]:.4f}')
 # Generate text
 print(f'Synthesizing text...')
 
-x0 = get_batch("train")[0][0].unsqueeze(0)
+x0 = get_batch("train")[0][0].unsqueeze(0).to(device)
 hprev, cprev = model.initHidden(batch_size=1)
 
 if config['sampling'] == "temp":
