@@ -122,7 +122,7 @@ def process_file(file_path, output_prefix, desired_vocabulary_size):
 
 if __name__ == "__main__":
     print("Starting bpe4_tokenizer")
-    train_merges = process_file("data/train.txt", "token_data/train", desired_vocabulary_size=258)
+    train_merges = process_file("data/train.txt", "token_data/train", desired_vocabulary_size=512)
     print("Vocabulary created")
     print("Encoding validation.txt")
     with open("data/validation.txt", "r") as f:
