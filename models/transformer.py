@@ -214,13 +214,10 @@ class DecoderOnlyTransformer(nn.Module):
     def synthesize(self, tokens, max_new_tokens, temperature):
         for _ in range(max_new_tokens):
             input = tokens[:, -config['seq_length']:]
-
             logits, _ = self(input)
             logits = logits[:, -1, :]
             probs = F.softmax(logits / temperature, dim=-1)
-
             next_token = torch.multinomial(probs, num_samples=1)
-
             tokens = torch.cat((tokens, next_token), dim=1)
         return tokens
 
@@ -284,8 +281,6 @@ with open(sys.argv[1], 'r') as f:
 
 train_data, vocab, val_data = load_data(config['tokenizer'])
 
-n = int(len(train_data) * config['train_size'])
-
 # Initialize model and optimizer
 model = DecoderOnlyTransformer(len(vocab)).to(device)
 optimizer = torch.optim.AdamW(
@@ -311,8 +306,8 @@ if (not model_loaded):
             val_loss_values.append(losses['val'])
             train_perplexity.append(perplexity['train'])
             val_perplexity.append(perplexity['val'])
-            print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {
-                  perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+            print(f"""step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {
+                  perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}""")
 
         if iter % config['syntesize_every'] == 0:
             prompt = torch.tensor([[0]], dtype=torch.long, device=device)

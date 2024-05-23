@@ -1,7 +1,7 @@
 {
   "model": "transformer",
   "tokenizer": "char",
-  "batch_size": 16,
+  "batch_size": 32,
   "seq_length": 64,
   "n_iters": 25000,
   "learning_rate": 0.001,
@@ -14,7 +14,8 @@
   "eval_iters": 100,
   "log_every": 1000,
   "syntesize_every": 10000,
-  "train_size": 0.9,
   "lambda": 0.001,
-  "temperature": 0.9
+  "sampling": "temp",
+  "temperature": 0.9,
+  "nucleus": 0.5
 }
