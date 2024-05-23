@@ -4,7 +4,7 @@
   "m": 100,
   "learning_rate": 0.001,
   "seq_length": 25,
-  "batch_size": 1,
+  "batch_size": 2,
   "gradient_clip": 5,
   "num_layers": 2,
   "train_size": 0.8,
@@ -15,7 +15,7 @@
   "log_every": 1000,
   "synthesize_every": 10000,
   "eval_iters":  100,
-  "sampling": "nucleus",
+  "sampling": "temp",
   "temperature": 0.9,
   "nucleus": 0.9,
   "max_new_tokens": 200
