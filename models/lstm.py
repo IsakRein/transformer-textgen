@@ -123,8 +123,8 @@ def test_word2vec_seq(model, word2vec_data, words):
 def construct_word2Vec_batch(split, i):
     data = train_data if split == 'train' else val_data
     X = data[:, i:i+config['seq_length']].T
-    X = torch.tensor(X)
-    Y = torch.zeros((config['seq_length'], output_size))
+    X = torch.tensor(X, device=device)
+    Y = torch.zeros((config['seq_length'], output_size), device=device)
 
     k = 0
     for j in range(i+1, i + config['seq_length'] + 1):
@@ -361,19 +361,7 @@ if (not model_loaded):
         hidden, cell = model.initHidden(batch_size=1)
         for i in range(0, num_words - config['seq_length'], config['seq_length']):
             if config['tokenizer'] == 'vec':
-                # TODO: Bör det vara .to(device) efter metodanropet.
-                # Det var det tidigare men det är inte det för get_batch
                 X, Y = construct_word2Vec_batch("train", i)
-                # X = word2vec[:, i:i+25].T
-                # X = torch.tensor(X, device=device)
-                # Y = construct_Y_batch(
-                #     start_index=i+1,
-                #     end_index=i+26,
-                #     words=words,
-                #     word_set=word_set,
-                #     seq_length=config['seq_length'],
-                #     word_to_index=word_to_index
-                # ).to(device)
             else:
                 X,Y = get_batch("train", i)
 

@@ -9,7 +9,7 @@ labeled "From Karpathy". The other functions are rewrites/own implementations
 of functions from that repository.
 """
 
-desired_vocabulary_size = 280
+desired_vocabulary_size = 512
 
 
 def most_common_pair(bytes_list):
@@ -19,7 +19,6 @@ def most_common_pair(bytes_list):
     return max(pairs, key=pairs.get)
 
 # From Karpathy
-
 
 def get_stats(bytes_list):
     pairs = {}

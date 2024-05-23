@@ -36,6 +36,7 @@ def get_batch(split):
         len(data) - config['seq_length'], (config['batch_size'],))
     X_batch = torch.stack([data[j:j+config['seq_length']] for j in idx])
     Y_batch = torch.stack([data[j+1:j+config['seq_length']+1] for j in idx])
+    Y_batch = Y_batch.reshape((1, config['batch_sicze'] * config['seq_length']))
     X_batch, Y_batch = X_batch.to(device), Y_batch.to(device)
     return X_batch, Y_batch
 

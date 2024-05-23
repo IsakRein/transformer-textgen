@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
    text_split_utf8 = [list(t.encode("utf-8")) for t in text_split]
 
-   desired_vocabulary_size = 500
+   desired_vocabulary_size = 512
    bytes_list, merges = tokenize(bytes_list=text_split_utf8, desired_vocab_size=desired_vocabulary_size)
 
    vocab = create_vocabulary(merges)
