@@ -11,6 +11,9 @@ labeled "From Karpathy". The other functions are rewrites/own implementations
 of functions from that repository.
 """
 
+# Taken from https://stackoverflow.com/questions/952914/how-do-i-make-a-flat-list-out-of-a-list-of-lists
+def flatten(xss):
+    return [x for xs in xss for x in xs]
 
 def get_stats_2D(bytes_list):
     """ 
@@ -29,9 +32,11 @@ def karpathy_merge_2D(ids, pair, idx):
    Replaces consecutive occurrences of pair with the new token idx
    in EVERY word in ids. 
    """
-   newids = []  # Two-dimensional list where one inner list is one word.
-   for word in ids:
-      newids.append(karpathy_merge(word, pair, idx))
+   #newids = []  # Two-dimensional list where one inner list is one word.
+   newids = [[] for _ in range(len(ids))]
+   for i, word in enumerate(ids):
+      #newids.append(karpathy_merge(word, pair, idx))
+      newids[i] = karpathy_merge(word, pair, idx)
    return newids
 
 # From Karpathy
@@ -73,6 +78,7 @@ def tokenize(bytes_list, desired_vocab_size):
         pair = max(pairs, key=pairs.get)
         merges[pair] = n
         bytes_list = karpathy_merge_2D(bytes_list, pair, n)
+        print("merge number", n, pair, "->", n )
         n += 1
     return bytes_list, merges
 
@@ -83,8 +89,7 @@ def visualize_tokens(token_indices, vocab):
         "utf-8", errors="replace"), output_bytes))
     print(output_bytes)
 
-
-def process_file(file_path, output_prefix, desired_vocabulary_size=500):
+def process_file(file_path, output_prefix, desired_vocabulary_size):
     with open(file_path, "r") as f:
         text = f.read()
 
@@ -94,21 +99,39 @@ def process_file(file_path, output_prefix, desired_vocabulary_size=500):
     text_split = re.findall(split_pattern, text)
     text_split_utf8 = [list(t.encode("utf-8")) for t in text_split]
 
-    bytes_list, merges = tokenize(
-        bytes_list=text_split_utf8, desired_vocab_size=desired_vocabulary_size)
+    bytes_list, merges = tokenize(bytes_list=text_split_utf8, desired_vocab_size=desired_vocabulary_size)
+    print("Done with tokenize")
+    bytes_list = flatten(bytes_list)
+    bytes_list = np.asanyarray(bytes_list)
     vocab = create_vocabulary(merges)
+    print("Done with create_vocabulary")
 
-    encoded_text = encode(text, merges)
-    np.save(f"{output_prefix}_bpe.npy", encoded_text)
+    np.save(f"{output_prefix}_bpe4.npy", bytes_list)
 
-    with open(f'{output_prefix}_vocabulary_bpe.pkl', 'wb') as f:
+    with open(f'{output_prefix}_vocabulary_bpe4.pkl', 'wb') as f:
         pickle.dump(vocab, f)
-
+    print("Done with saving vocabulary and bytes_list to memory")
+    
+    # Test that tokenize works correctly
+    # Only run these two lines for very small vocabulary sizes
+    #encoded_text = encode(text, merges)
+    #assert np.array_equal(encoded_text, bytes_list)
+    
+    return merges
+    
 
 if __name__ == "__main__":
-    files = [("data/train.txt", "token_data/train"),
-             ("data/validation.txt", "token_data/validation"),
-             ("data/test.txt", "token_data/test")]
+    print("Starting bpe4_tokenizer")
+    train_merges = process_file("data/train.txt", "token_data/train", desired_vocabulary_size=258)
+    print("Vocabulary created")
+    print("Encoding validation.txt")
+    with open("data/validation.txt", "r") as f:
+       val_string = f.read()
+    val_encoded = encode(val_string, train_merges)
+    np.save(f"token_data/validation_bpe4.npy", val_encoded)
 
-    for file_path, output_prefix in files:
-        process_file(file_path, output_prefix)
+    print("Encoding test.txt")
+    with open("data/test.txt", "r") as f:
+       test_string = f.read()
+    test_encoded = encode(test_string, train_merges)
+    np.save(f"token_data/test_bpe4.npy", test_encoded)

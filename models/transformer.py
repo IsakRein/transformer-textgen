@@ -36,6 +36,7 @@ def get_batch(split):
         len(data) - config['seq_length'], (config['batch_size'],))
     X_batch = torch.stack([data[j:j+config['seq_length']] for j in idx])
     Y_batch = torch.stack([data[j+1:j+config['seq_length']+1] for j in idx])
+    Y_batch = Y_batch.reshape((1, config['batch_size'] * config['seq_length']))
     X_batch, Y_batch = X_batch.to(device), Y_batch.to(device)
     return X_batch, Y_batch
 
@@ -45,7 +46,9 @@ def load_data(tokenizer):
         np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
     with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
-    return data, vocab
+    val_data = torch.tensor(np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+
+    return data, vocab, val_data
 
 
 def decode(ids, vocab):
@@ -271,11 +274,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-data, vocab = load_data(config['tokenizer'])
+train_data, vocab, val_data = load_data(config['tokenizer'])
 
-n = int(len(data) * config['train_size'])
-train_data = data[:n]
-val_data = data[n:]
+n = int(len(train_data) * config['train_size'])
 
 # Initialize model and optimizer
 model = DecoderOnlyTransformer(len(vocab)).to(device)

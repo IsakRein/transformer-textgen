@@ -9,8 +9,7 @@ labeled "From Karpathy". The other functions are rewrites/own implementations
 of functions from that repository.
 """
 
-desired_vocabulary_size = 280
-
+desired_vocabulary_size = 512
 
 def most_common_pair(bytes_list):
     pairs = {}
@@ -19,7 +18,6 @@ def most_common_pair(bytes_list):
     return max(pairs, key=pairs.get)
 
 # From Karpathy
-
 
 def get_stats(bytes_list):
     pairs = {}
@@ -56,6 +54,7 @@ def tokenize(bytes_list, desired_vocab_size):
         pair = most_common_pair(bytes_list)
         merges[pair] = n
         bytes_list = karpathy_merge(bytes_list, pair, n)
+        print("merge number", n, pair, "->", "n" )
         n += 1
     return bytes_list, merges
 
@@ -99,18 +98,32 @@ def process_file(file_path, output_prefix, desired_vocab_size):
 
     bytes_list = list(text.encode("UTF-8"))
     bytes_list, merges = tokenize(bytes_list, desired_vocab_size)
+    print("Done with tokenize")
     vocab = create_vocabulary(merges)
+    print("Done with creating vocabulary")
 
     np.save(f"{output_prefix}_bpe.npy", bytes_list)
 
     with open(f'{output_prefix}_vocabulary_bpe.pkl', 'wb') as f:
         pickle.dump(vocab, f)
+    print("Done with saving vocabulary and bytes_list to memory")
+
+    return merges
+
 
 
 if __name__ == "__main__":
-    files = [("data/train.txt", "token_data/train"),
-             ("data/validation.txt", "token_data/validation"),
-             ("data/test.txt", "token_data/test")]
+    print("Starting bpe_tokenizer")
+    train_merges = process_file("data/train.txt", "token_data/train", desired_vocab_size=258)
+    print("Vocabulary created")
+    print("Encoding validation.txt")
+    with open("data/validation.txt", "r") as f:
+       val_string = f.read()
+    val_encoded = encode(val_string, train_merges)
+    np.save(f"token_data/validation_bpe.npy", val_encoded)
 
-    for file_path, output_prefix in files:
-        process_file(file_path, output_prefix, desired_vocabulary_size)
+    print("Encoding test.txt")
+    with open("data/test.txt", "r") as f:
+       test_string = f.read()
+    test_encoded = encode(test_string, train_merges)
+    np.save(f"token_data/test_bpe.npy", test_encoded)

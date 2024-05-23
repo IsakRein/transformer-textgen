@@ -74,13 +74,11 @@ def load_data(tokenizer):
         np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
     with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
-    return data, vocab
+    val_data = torch.tensor(np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+    return data, vocab, val_data
 
 
 def load_word2vec():
-    # TODO: Tog bort smaller vector här. Tänker att vi ändå vill köra samma när vi skapar resultat
-    word2vec_path = "token_data/text_vec.npy"
-
     # The gensim model.
     model = Word2Vec.load("token_data/vec_gensim.model")
 
@@ -340,19 +338,17 @@ if config['tokenizer'] == 'vec':
     K = data.shape[0]
     n = int(data.shape[1] * config['train_size'])
     train_data = data[:, :n]
-    val_data = data[:, :n]
+    val_data = data[:, :n] # TODO: Vi läser in validation data annorlunda nu. Se load_data
 else:
-    data, vocab = load_data(config['tokenizer'])
+    train_data, vocab, val_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
-    n = int(len(data) * config['train_size'])
-    train_data = data[:n]
-    val_data = data[n:]
+    n = int(len(train_data) * config['train_size'])
 
 output_size = len(vocab.keys())
 if config['tokenizer'] == 'vec':
-    num_words = data.shape[1]
+    num_words = train_data.shape[1] # TODO: Lös fallet med Word2Vec
 else:
-    num_words = len(data)
+    num_words = len(train_data)
 
 model = RNN(K, config['m'], output_size).to(device)
 
@@ -372,6 +368,7 @@ else:
 model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(
     PATH)
 
+#model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = False, [], [], [], []
 if (not model_loaded):
     while True:
         hidden = model.initHidden(config['batch_size'])

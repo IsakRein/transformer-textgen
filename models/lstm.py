@@ -91,18 +91,30 @@ def load_data(tokenizer):
         np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
     with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
-    return data, vocab
+    val_data = torch.tensor(
+        np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+    return data, vocab, val_data
 
 
-def load_word2vec(use_fewer_dimensions=False):
-    word2vec_path = "token_data/text_vector.npy"
-    model = Word2Vec.load("token_data/vector.model")
-    word2vec = np.load("token_data/word_vectors.npy")
-    words = np.load("token_data/words.npy")
-    word_set = np.load("token_data/word_set.npy")
-    with open("token_data/vocabulary_vector.pkl", "rb") as f:
+def load_word2vec():
+    # The gensim model.
+    model = Word2Vec.load("token_data/vec_gensim.model")
+
+    # K x N numpy array where K is the number of features for a word and N is the number of words in the corpus.
+    word2vec = np.load("token_data/text_vec.npy")
+
+    # List of all words that appear in chronological order.
+    words = np.load("token_data/vec_words.npy")
+
+    # Dict mapping words to indices
+    with open("token_data/word_to_index_vec.pkl", "rb") as f:
         word_to_index = pickle.load(f)
-    return model, word2vec, words, word_set, word_to_index
+
+    # Keypairs of words in word_set and their index in word_set
+    with open("token_data/vocabulary_vec.pkl", "rb") as f:
+        vocab = pickle.load(f)
+
+    return model, word2vec, words, word_to_index, vocab
 
 
 def test_word2vec_seq(model, word2vec_data, words):
@@ -110,13 +122,50 @@ def test_word2vec_seq(model, word2vec_data, words):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
 
 
-def construct_Y_batch(start_index, end_index, words, word_set, seq_length, word_to_index):
-    Y = torch.zeros((seq_length, word_set.shape[0]))
-    i = 0
-    for j in range(start_index, end_index):
-        index = word_to_index[words[j]]
-        Y[i, index] = 1
-        i += 1
+def construct_word2Vec_batch(split, i):
+    data = train_data if split == 'train' else val_data
+    X = data[:, i:i+config['seq_length']].T
+    X = torch.tensor(X, device=device)
+    Y = torch.zeros((config['seq_length'], output_size), device=device)
+
+    k = 0
+    for j in range(i+1, i + config['seq_length'] + 1):
+        Y_index = word_to_index[words[j]]
+        Y[k, Y_index] = 1
+        k += 1
+    return X, Y
+
+
+def synthesize_word2vec(lstm, hprev, cprev, x0, n, vocab, word2vec_model):
+    h_t, c_t = hprev, cprev
+    x_t = x0
+
+    Y = [""] * n
+
+    for t in range(n):
+        output, h_t, c_t = lstm(x_t, h_t, c_t)
+
+        p_t = output.detach().numpy()
+        p_t = p_t[0, -1, :]
+        p_t = np.exp(p_t / config['temperature'])
+        p_t = p_t / np.sum(p_t)
+
+        # generate x_t
+
+        cp = np.cumsum(p_t)
+        a = np.random.rand()
+        ixs = np.where(cp - a > 0)[0]
+        ix = ixs[0]
+
+        # Update x_t for next iteration
+        x_tplus1 = torch.zeros_like(x0)
+        x_tplus1 = torch.zeros_like(x0)
+        x_tplus1[:, 0:-1, :] = x_t[:, 1:, :]
+        x_tplus1[0, -1, ix] = 1
+        x_t = x_tplus1
+
+        Y.append(ix)
+
     return Y
 
 
@@ -160,10 +209,11 @@ def nucleus_sampling(model, h, cprev, x, theta, max_new_tokens):
     Y = torch.zeros((max_new_tokens), dtype=float)
 
     for t in range(max_new_tokens):
-        
+
         output, h_t, c_t = model(x_t, h_t, c_t)
         probs = torch.nn.functional.softmax(output.squeeze(0), dim=-1)
-        sorted_probs, sorted_indices = torch.sort(probs[-1,:], descending=True)
+        sorted_probs, sorted_indices = torch.sort(
+            probs[-1, :], descending=True)
 
         cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
         cutoff_index = torch.where(cumulative_probs >= theta)[0][0] + 1
@@ -315,22 +365,29 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-if config['tokenizer'] == 'vector':
-    model, word2vec, words, word_set, word_to_index = load_word2vec(
-        use_fewer_dimensions=False)
-    test_word2vec_seq(model=model, word2vec_data=word2vec, words=words)
-    K = word2vec.shape[0]
-    num_words = word2vec.shape[1]
-    output_size = word_set.shape[0]
+if config['tokenizer'] == 'vec':
+    word2vec_model, data, words, word_to_index, vocab = load_word2vec()
+    test_word2vec_seq(model=word2vec_model, word2vec_data=data, words=words)
+    K = data.shape[0]
+    n = int(data.shape[1] * config['train_size'])
+    train_data = data[:, :n]
+    train_data = torch.from_numpy(train_data)
+    train_data = train_data.to(torch.float)
+    val_data = data[:, :n]
+    val_data = torch.from_numpy(val_data)
+    val_data = val_data.to(torch.float)
 else:
-    data, vocab = load_data(config['tokenizer'])
-    n = int(len(data) * config['train_size'])
-    train_data = data[:n]
-    val_data = data[n:]
+    train_data, vocab, val_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
+    n = int(len(train_data) * config['train_size'])
+
+output_size = len(vocab.keys())
+if config['tokenizer'] == 'vec':
+    num_words = train_data.shape[1]
+else:
     num_words = len(train_data)
 
-model = LSTM(K, config['m'], K, num_layers=config.get(
+model = LSTM(K, config['m'], output_size, num_layers=config.get(
     'num_layers', 1)).to(device)
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
@@ -341,6 +398,8 @@ iteration = 0
 
 test_file = re.findall(r'tests\/(\w+)\.json', sys.argv[1])[0]
 PATH = f"./model_data/{test_file}"
+
+# model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = False, [], [], [], []
 model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(
     PATH)
 
@@ -348,17 +407,8 @@ if (not model_loaded):
     while True:
         hidden, cell = model.initHidden(config['batch_size'])
         for i in range(0, num_words - config['seq_length'], config['seq_length']):
-            if config['tokenizer'] == 'vector':
-                X = word2vec[:, i:i+25].T
-                X = torch.tensor(X, device=device)
-                Y = construct_Y_batch(
-                    start_index=i+1,
-                    end_index=i+26,
-                    words=words,
-                    word_set=word_set,
-                    seq_length=config['seq_length'],
-                    word_to_index=word_to_index
-                ).to(device)
+            if config['tokenizer'] == 'vec':
+                X, Y = construct_word2Vec_batch("train", i)
             else:
                 X, Y = get_batch("train")
 
@@ -391,9 +441,11 @@ if (not model_loaded):
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['synthesize_every'] == 0:
+                # TODO: Fixa synthesize av word2vec, kolla på tidigare commits hur det kan göras
                 x0 = get_batch("train")[0][0].unsqueeze(0)
                 hprev, cprev = model.initHidden(1)
                 Y_synth = synthesize(model, hprev, cprev, x0, 200)
@@ -411,7 +463,8 @@ if (not model_loaded):
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
     save_model(PATH, train_loss_values, val_loss_values,
                train_perplexity, val_perplexity)
 
@@ -439,9 +492,7 @@ print(sample)
 with open(f"{PATH}/text_sample.txt", "w") as file:
     file.write(sample)
 
-# with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
-#     text = f.read()
-# spell_checker = load_spell_checker(text)
-# spelling_accuracy = evaluate_spelling(spell_checker, sample)
-# with open(f"{PATH}/spelling_accuracy.txt", "w") as file:
-#     file.write(str(spelling_accuracy))
+
+spelling_accuracy = evaluate_spelling(SpellChecker(), sample)
+with open(f"{PATH}/spelling_accuracy.txt", "w") as file:
+    file.write(str(spelling_accuracy))
