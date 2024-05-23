@@ -3,8 +3,8 @@
   "tokenizer": "char",
   "m": 128,
   "learning_rate": 0.001,
-  "seq_length": 32,
-  "batch_size": 16,
+  "seq_length": 64,
+  "batch_size": 32,
   "gradient_clip": 5,
   "n_iters": 100000,
   "log_every": 1000,
@@ -14,5 +14,5 @@
   "sampling": "temp",
   "temperature": 0.9,
   "nucleus": 0.5,
-  "max_new_tokens": 200
+  "max_new_tokens": 512
 }
