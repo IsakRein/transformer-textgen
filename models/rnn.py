@@ -23,9 +23,12 @@ class RNN(nn.Module):
         self.input_size = input_size
         self.output_size = output_size
 
-        self.U = nn.Linear(input_size, hidden_size, dtype=float, bias=True)
-        self.W = nn.Linear(hidden_size, hidden_size, dtype=float, bias=True)
-        self.V = nn.Linear(hidden_size, output_size, dtype=float, bias=True)
+        self.U = nn.Linear(input_size, hidden_size,
+                           dtype=torch.float, bias=True)
+        self.W = nn.Linear(hidden_size, hidden_size,
+                           dtype=torch.float, bias=True)
+        self.V = nn.Linear(hidden_size, output_size,
+                           dtype=torch.float, bias=True)
 
         # Initialize weights using normal distribution scaled by 0.01
         nn.init.normal_(self.U.weight, std=0.01)
@@ -38,21 +41,38 @@ class RNN(nn.Module):
         nn.init.zeros_(self.V.bias)
 
     def forward(self, input, hidden):
-        seq_length, K = input.shape
-        output = torch.zeros((seq_length, self.output_size), dtype=torch.float)
-        for i in range(seq_length):
-            hidden = torch.tanh(self.U(input[i]) + self.W(hidden))
-            output[i, :] = torch.log_softmax(self.V(hidden), dim=1)
+        batch_size, seq_length, K = input.shape
+
+        # Initialize the output tensor
+        output = torch.zeros(batch_size * seq_length,
+                             self.output_size, dtype=torch.float)
+
+        # Flatten the input for easier processing
+        input_flat = input.view(batch_size * seq_length, -1)
+
+        # Compute the hidden states for each time step
+        hidden_states = []
+        for pos in range(seq_length):
+            hidden = torch.tanh(self.U(input[:, pos, :]) + self.W(hidden))
+            hidden_states.append(hidden)
+
+        # Concatenate hidden states and reshape for batch processing
+        hidden_states = torch.cat(hidden_states, dim=1).view(
+            batch_size * seq_length, -1)
+
+        # Compute the output using the final hidden states
+        output = torch.log_softmax(self.V(hidden_states), dim=1)
+
         return output, hidden
 
-    def initHidden(self):
-        return torch.zeros(1, self.hidden_size, dtype=float)
+    def initHidden(self, batch_size):
+        return torch.zeros(batch_size, self.hidden_size, dtype=torch.float)
 
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
-    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
     return data, vocab
 
@@ -80,15 +100,17 @@ def load_word2vec():
 
     return model, word2vec, words, word_to_index, vocab
 
+
 def test_word2vec_seq(model, word2vec_data, words):
     for i in range(len(words)):
         assert np.array_equal(model.wv[words[i]], word2vec_data[:, i])
+
 
 def synthesize_word2vec(rnn, hprev, x0, n, vocab, word2vec_model):
     h_t = hprev
     x_t = x0
     Y = [""] * n
-    
+
     for t in range(n):
         output, h_t = rnn(x_t, h_t)
         p_t = output.detach().numpy()
@@ -109,59 +131,67 @@ def synthesize_word2vec(rnn, hprev, x0, n, vocab, word2vec_model):
         x_t = x_t.double()
     return Y
 
+
 def nucleus_sampling(rnn, h, x, theta, max_new_tokens):
 
-        h_t = h
-        x_t = x
-        Y = torch.zeros((max_new_tokens), dtype=float)
-        
-        for t in range(max_new_tokens):
-            output, h_t = rnn(x_t, h_t)
-            probs = torch.nn.functional.softmax(output, dim=-1)
+    h_t = h
+    x_t = x
+    Y = torch.zeros((max_new_tokens), dtype=torch.float)
 
-            sorted_probs, sorted_indices = torch.sort(probs, descending=True)
-            
-            cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
-            
-            cutoff_index = torch.where(cumulative_probs[0] >= theta)[0][0] + 1
-            
-            sorted_probs[0][cutoff_index:] = 0
-            sorted_probs = sorted_probs / torch.sum(sorted_probs)
-            
-            next_token = torch.multinomial(sorted_probs, num_samples=1)
+    for t in range(max_new_tokens):
+        output, h_t = rnn(x_t, h_t)
+        probs = torch.nn.functional.softmax(output, dim=-1)
 
-            x_t = torch.zeros_like(x0)
-            x_t[0, sorted_indices[0][next_token][0].item()] = 1
-        
-            Y[t] = sorted_indices[0][next_token][0].item()
-    
-        return Y.tolist()
+        sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+
+        cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+        cutoff_index = torch.where(cumulative_probs[0] >= theta)[0][0] + 1
+
+        sorted_probs[0][cutoff_index:] = 0
+        sorted_probs = sorted_probs / torch.sum(sorted_probs)
+
+        next_token = torch.multinomial(sorted_probs, num_samples=1)
+
+        x_t = torch.zeros_like(x0)
+        x_t[0, 0, sorted_indices[0][next_token][0].item()] = 1
+
+        Y[t] = sorted_indices[0][next_token][0].item()
+
+    return Y.tolist()
+
 
 def synthesize(rnn, hprev, x0, n):
-        h_t = hprev
-        x_t = x0
-        Y = torch.zeros((n, rnn.input_size), dtype=float)
+    h_t = hprev
+    x_t = x0
+    Y = torch.zeros((n, rnn.input_size), dtype=torch.float32)
 
-        for t in range(n):
-            output, h_t = rnn(x_t, h_t)
-            p_t = output.detach().numpy()
-            p_t = np.exp(p_t)
-            p_t = p_t / np.sum(p_t)
+    for t in range(n):
+        output, h_t = rnn(x_t, h_t)
+        p_t = output.detach().numpy()
+        p_t = p_t[-1, :]
+        p_t = np.exp(p_t / config['temperature'])
+        p_t = p_t / np.sum(p_t)
 
-            # generate x_t
-            cp = np.cumsum(p_t)
-            a = np.random.rand()
-            ixs = np.where(cp - a > 0)[0]
-            ii = ixs[0]
+        # generate x_t
+        cp = np.cumsum(p_t)
+        a = np.random.rand()
+        ixs = np.where(cp - a > 0)[0]
+        ii = ixs[0]
 
-            # Update Y and x_t for next iteration
-            Y[t, ii] = 1
-            x_t = torch.zeros_like(x0)
-            x_t[0, ii] = 1
-        return Y
+        # Update Y and x_t for next iteration
+        Y[t, ii] = 1
+        x_tplus1 = torch.zeros_like(x0)
+        x_tplus1[:, 0:-1, :] = x_t[:, 1:, :]
+        x_tplus1[0, -1, ii] = 1
+        x_t = x_tplus1
+
+    return Y
+
 
 def softmax(x, temperature=1):
     return np.exp(x / temperature) / (np.sum(np.exp(x / temperature), axis=0) + 1e-15)
+
 
 def decode(ids, vocab):
     # given ids (list of integers), return Python string
@@ -179,6 +209,7 @@ def visualize_tokens(token_indices, vocab):
         "utf-8", errors="replace"), output_bytes))
     print(output_bytes)
 
+
 def load_model(PATH):
     if (os.path.exists(PATH)):
         print("Loading model")
@@ -187,12 +218,13 @@ def load_model(PATH):
         val_loss_values = torch.load(f"{PATH}/val_losses.pth")
         train_perplexity = torch.load(f"{PATH}/train_perplexity.pth")
         val_perplexity = torch.load(f"{PATH}/val_perplexity.pth")
-        return True, train_loss_values, val_loss_values , train_perplexity, val_perplexity
+        return True, train_loss_values, val_loss_values, train_perplexity, val_perplexity
     else:
         return False, [], [], [], []
-    
-def save_model(PATH,train_loss_values,val_loss_values,train_perplexity, val_perplexity):
-    os.mkdir(PATH) 
+
+
+def save_model(PATH, train_loss_values, val_loss_values, train_perplexity, val_perplexity):
+    os.mkdir(PATH)
     torch.save(model.state_dict(), f"{PATH}/model.pth")
     torch.save(torch.tensor(train_loss_values), f"{PATH}/train_losses.pth")
     torch.save(torch.tensor(val_loss_values), f"{PATH}/val_losses.pth")
@@ -205,35 +237,44 @@ def estimate_metrics():
     out = {}
     perplexity = {}
     model.eval()
-    hidden = model.initHidden()
-    
+    hidden = model.initHidden(config['batch_size'])
+
     for split in ['train', 'val']:
         losses = torch.zeros(config['eval_iters'])
         perplexity_metric = Perplexity()
         if split == "train":
             if config['tokenizer'] == 'vec':
-                start_idx = np.random.randint((train_data.shape[1])) - config['eval_iters']
-            else: 
-                start_idx = np.random.randint(len(train_data))-config['eval_iters']
+                start_idx = np.random.randint(
+                    (train_data.shape[1])) - config['eval_iters']
+            else:
+                start_idx = np.random.randint(
+                    len(train_data))-config['eval_iters']
         elif split == "val":
             if config['tokenizer'] == 'vec':
-                start_idx = np.random.randint((val_data.shape[1])) - config['eval_iters']
+                start_idx = np.random.randint(
+                    (val_data.shape[1])) - config['eval_iters']
             else:
-                start_idx = np.random.randint(len(val_data))-config['eval_iters']
+                start_idx = np.random.randint(
+                    len(val_data))-config['eval_iters']
         for k in range(config['eval_iters']):
             if config['tokenizer'] == 'vec':
                 X, Y = construct_word2Vec_batch(split, start_idx + k)
             else:
-                X, Y = get_batch(split,start_idx + k)
+                X, Y = get_batch(split)
             output, hidden = model(X, hidden)
-            loss = criterion(output, Y)
+            # Y = Y.view(config['batch_size'] * config['seq_length'], K)
+            loss = criterion(output, Y.view(
+                config['batch_size'] * config['seq_length'], K))
             losses[k] = loss.item()
-            labels = torch.argmax(Y, dim=1)
-            perplexity_metric.update(output.unsqueeze(0), labels.unsqueeze(0))
+            labels = torch.argmax(Y, dim=2)
+
+            perplexity_metric.update(output.view(
+                config['batch_size'], config['seq_length'], K), labels)
         out[split] = losses.mean().item()
         perplexity[split] = perplexity_metric.compute().item()
     model.train()
     return out, perplexity
+
 
 def construct_word2Vec_batch(split, i):
     data = train_data if split == 'train' else val_data
@@ -244,24 +285,32 @@ def construct_word2Vec_batch(split, i):
     k = 0
     for j in range(i+1, i + config['seq_length'] + 1):
         Y_index = word_to_index[words[j]]
-        Y[k, Y_index] = 1 
-        k += 1 
+        Y[k, Y_index] = 1
+        k += 1
     return X, Y
 
-def get_batch(split, i):
+
+def get_batch(split):
     data = train_data if split == 'train' else val_data
-    X_inds = data[i:i+config['seq_length']]
-    Y_inds = data[i+1:i+config['seq_length']+1]
 
-    X = torch.zeros((config['seq_length'], K), dtype=float)
-    Y = torch.zeros((config['seq_length'], K), dtype=float)
+    X = torch.zeros(
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
+    Y = torch.zeros(
+        (config['batch_size'], config['seq_length'], K), dtype=torch.float)
 
-    # One-hot encode inputs and outputs
-    for t, (x_char, y_char) in enumerate(zip(X_inds, Y_inds)):
-        X[t, x_char] = 1
-        Y[t, y_char] = 1
-    return X,Y
+    for batch in range(config['batch_size']):
+        idx = torch.randint(
+            len(data) - config['seq_length'], (1,))
 
+        X_encoded = data[idx:idx+config['seq_length']]
+        Y_encoded = data[idx+1:idx+config['seq_length']+1]
+
+        # One-hot encode inputs and outputs
+        for t, (x, y) in enumerate(zip(X_encoded, Y_encoded)):
+            X[batch, t, x] = 1
+            Y[batch, t, y] = 1
+
+    return X, Y
 
 
 def evaluate_spelling(spell_checker, generated_text):
@@ -269,8 +318,10 @@ def evaluate_spelling(spell_checker, generated_text):
     misspelled = spell_checker.unknown(words)
     total_words = len(words)
     correctly_spelled_words = total_words - len(misspelled)
-    correctly_spelled_percentage = (correctly_spelled_words / total_words) * 100
+    correctly_spelled_percentage = (
+        correctly_spelled_words / total_words) * 100
     return correctly_spelled_percentage
+
 
 # Set seed
 torch.manual_seed(0)
@@ -315,23 +366,25 @@ if test_files != []:
     PATH = f"./model_data/{test_file}"
 else:
     PATH = ""
-model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
+model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(
+    PATH)
 
 if (not model_loaded):
     while True:
-        hidden = model.initHidden()
+        hidden = model.initHidden(config['batch_size'])
         for i in range(0, num_words - config['seq_length'], config['seq_length']):
             if config['tokenizer'] == 'vec':
                 X, Y = construct_word2Vec_batch("train", i)
             else:
-                X,Y = get_batch("train",i)
-                
+                X, Y = get_batch("train")
+
             # Forward pass
-            hidden = model.initHidden()
+            hidden = model.initHidden(config['batch_size'])
             output, hidden = model(X, hidden)
 
             # Backward pass
-            loss = criterion(output, Y)
+            loss = criterion(output, Y.view(
+                config['batch_size'] * config['seq_length'], K))
 
             # TODO: Undersök detta. Tror konsekvensen är att vi inte backpropagar genom hidden state.
             hidden = hidden.detach()
@@ -348,24 +401,27 @@ if (not model_loaded):
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['syntesize_every'] == 0:
-                x0 = X[0, :].reshape(1, -1)
-                hprev = model.initHidden()
+                x0 = get_batch("train")[0][0].unsqueeze(0)
+                hprev = model.initHidden(1)
+
                 if config['tokenizer'] == 'vec':
-                    generated_text = synthesize_word2vec(model, hprev, x0, 200, vocab, word2vec_model)
+                    generated_text = synthesize_word2vec(
+                        model, hprev, x0, 200, vocab, word2vec_model)
                     print("".join(generated_text))
                 else:
                     Y_synth = synthesize(model, hprev, x0, 200)
                     print(decode([torch.argmax(y).item()
-                                for y in Y_synth], vocab))
+                                  for y in Y_synth], vocab))
 
             if iteration >= config['n_iters']:
                 break
 
             iteration += 1
-            
+
         if iteration >= config['n_iters']:
             break
 
@@ -374,9 +430,10 @@ if (not model_loaded):
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
-    save_model(PATH, train_loss_values, val_loss_values, train_perplexity, val_perplexity)
-
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    save_model(PATH, train_loss_values, val_loss_values,
+               train_perplexity, val_perplexity)
 
 
 print(f'Final train loss: {train_loss_values[-1]:.4f}')
@@ -387,31 +444,30 @@ print(f'Final val perplexity: {val_perplexity[-1]:.4f}')
 # Generate text
 print(f'Synthesizing text...')
 
-hprev = model.initHidden()
-X = torch.zeros((config['seq_length'], K), dtype=float)
-X[0,0] = 1
-x0 = X[0, :].reshape(1, -1)
+hprev = model.initHidden(1)
+x0 = get_batch("train")[0][0].unsqueeze(0)
 
 if config['sampling'] == "temp":
     if config['tokenizer'] == 'vec':
-        generated_text = synthesize_word2vec(model, hprev, x0, 200, vocab, word2vec_model)
+        generated_text = synthesize_word2vec(
+            model, hprev, x0, 200, vocab, word2vec_model)
         print("".join(generated_text))
     else:
         Y_synth = synthesize(model, hprev, x0, 200)
         sample = [torch.argmax(y).item() for y in Y_synth]
         sample = decode(sample, vocab)
-    
+
 elif config['sampling'] == "nucleus":
-    Y_synth = nucleus_sampling(model, hprev, x0, theta=config['nucleus'], max_new_tokens=config['max_new_tokens'])
+    Y_synth = nucleus_sampling(
+        model, hprev, x0, theta=config['nucleus'], max_new_tokens=config['max_new_tokens'])
     sample = decode(Y_synth, vocab)
-    
+
 print(sample)
-with open (f"{PATH}/text_sample.txt", "w") as file:
+with open(f"{PATH}/text_sample.txt", "w") as file:
     file.write(sample)
 
-with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+
 spell_checker = SpellChecker()
 spelling_accuracy = evaluate_spelling(spell_checker, sample)
-with open (f"{PATH}/spelling_accuracy.txt", "w") as file:
+with open(f"{PATH}/spelling_accuracy.txt", "w") as file:
     file.write(str(spelling_accuracy))
