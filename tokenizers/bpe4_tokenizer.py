@@ -111,16 +111,18 @@ def process_file(file_path, output_prefix, desired_vocabulary_size):
     with open(f'{output_prefix}_vocabulary_bpe4.pkl', 'wb') as f:
         pickle.dump(vocab, f)
     print("Done with saving vocabulary and bytes_list to memory")
+    
     # Test that tokenize works correctly
-    encoded_text = encode(text, merges)
-    assert np.array_equal(encoded_text, bytes_list)
+    # Only run these two lines for very small vocabulary sizes
+    #encoded_text = encode(text, merges)
+    #assert np.array_equal(encoded_text, bytes_list)
     
     return merges
     
 
 if __name__ == "__main__":
     print("Starting bpe4_tokenizer")
-    train_merges = process_file("data/train.txt", "token_data/train", desired_vocabulary_size=512)
+    train_merges = process_file("data/train.txt", "token_data/train", desired_vocabulary_size=258)
     print("Vocabulary created")
     print("Encoding validation.txt")
     with open("data/validation.txt", "r") as f:

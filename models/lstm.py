@@ -88,10 +88,11 @@ class LSTM(nn.Module):
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
-    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
-    return data, vocab
+    val_data = torch.tensor(np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+    return data, vocab, val_data
 
 
 def load_word2vec():
@@ -132,8 +133,6 @@ def construct_word2Vec_batch(split, i):
         Y[k, Y_index] = 1 
         k += 1 
     return X, Y
-
-# def synthesize_word2vec(rnn, hprev, x0, n, vocab, word2vec_model):
 
 def synthesize_word2vec(lstm, hprev, cprev, x0, n, vocab, word2vec_model):
     h_t, c_t = hprev, cprev
@@ -327,17 +326,15 @@ if config['tokenizer'] == 'vec':
     val_data = torch.from_numpy(val_data)
     val_data = val_data.to(torch.float)
 else:
-    data, vocab = load_data(config['tokenizer'])
+    train_data, vocab, val_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
-    n = int(len(data) * config['train_size'])
-    train_data = data[:n]
-    val_data = data[n:]
+    n = int(len(train_data) * config['train_size'])
 
 output_size = len(vocab.keys())
 if config['tokenizer'] == 'vec':
-    num_words = data.shape[1]
+    num_words = train_data.shape[1] 
 else:
-    num_words = len(data)
+    num_words = len(train_data)
 
 model = LSTM(K, config['m'], output_size, num_layers=config.get(
     'num_layers', 1)).to(device)
@@ -350,7 +347,8 @@ iteration = 0
 
 test_file = re.findall(r'tests\/(\w+)\.json', sys.argv[1])[0]
 PATH = f"./model_data/{test_file}"
-model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
+#model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = load_model(PATH)
+model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = False, [], [], [], []
 
 if (not model_loaded):
     while True:

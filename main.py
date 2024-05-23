@@ -33,7 +33,7 @@ for tokenizer in [
     'bpe4'
 ]:
     # Run tokenizer
-    if f'vocabulary_{tokenizer}.pkl' not in files:
+    if f'train_vocabulary_{tokenizer}.pkl' not in files:
         print(f'Running {tokenizer} tokenizer')
         #os.system(f'venv/bin/python tokenizers/{tokenizer}_tokenizer.py')
         os.system(f'python tokenizers/{tokenizer}_tokenizer.py')
