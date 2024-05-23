@@ -12,8 +12,8 @@
   "syntesize_every": 10000,
   "train_size": 0.9, 
   "eval_iters": 100,
-  "sampling": "temp",
-  "temperature": 0.1,
-  "nucleus": 0.9,
+  "sampling": "nucleus",
+  "temperature": 0.9,
+  "nucleus": 0.5,
   "max_new_tokens": 200
 }

@@ -43,4 +43,4 @@ with open(sys.argv[1], 'r') as f:
 # Run model
 print(f'\nRunning {config["model"]} model with config {sys.argv[1]}')
 print('-' * 50)
-os.system(f'venv/bin/python models/{config["model"]}.py {sys.argv[1]}')
+os.system(f'./bin/python models/{config["model"]}.py {sys.argv[1]}')

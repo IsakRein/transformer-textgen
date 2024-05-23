@@ -140,23 +140,25 @@ def nucleus_sampling(rnn, h, x, theta, max_new_tokens):
 
     for t in range(max_new_tokens):
         output, h_t = rnn(x_t, h_t)
-        probs = torch.nn.functional.softmax(output, dim=-1)
-
+        probs = torch.nn.functional.softmax(output[-1,:], dim=-1)
+        
         sorted_probs, sorted_indices = torch.sort(probs, descending=True)
 
         cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
 
-        cutoff_index = torch.where(cumulative_probs[0] >= theta)[0][0] + 1
+        cutoff_index = torch.where(cumulative_probs >= theta)[0][0] + 1
 
-        sorted_probs[0][cutoff_index:] = 0
+        sorted_probs[cutoff_index:] = 0
         sorted_probs = sorted_probs / torch.sum(sorted_probs)
 
         next_token = torch.multinomial(sorted_probs, num_samples=1)
 
-        x_t = torch.zeros_like(x0)
-        x_t[0, 0, sorted_indices[0][next_token][0].item()] = 1
+        x_tplus1 = torch.zeros_like(x0)
+        x_tplus1[:, 0:-1, :] = x_t[:, 1:, :]
+        x_tplus1[0, -1, sorted_indices[next_token].item()] = 1
+        x_t = x_tplus1
 
-        Y[t] = sorted_indices[0][next_token][0].item()
+        Y[t] = sorted_indices[next_token].item()
 
     return Y.tolist()
 
@@ -401,8 +403,7 @@ if (not model_loaded):
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['syntesize_every'] == 0:
                 x0 = get_batch("train")[0][0].unsqueeze(0)
@@ -430,8 +431,7 @@ if (not model_loaded):
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
-          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
     save_model(PATH, train_loss_values, val_loss_values,
                train_perplexity, val_perplexity)
 
