@@ -74,7 +74,8 @@ def load_data(tokenizer):
         np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
     with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
-    val_data = torch.tensor(np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
+    val_data = torch.tensor(
+        np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long)
     return data, vocab, val_data
 
 
@@ -138,8 +139,8 @@ def nucleus_sampling(rnn, h, x, theta, max_new_tokens):
 
     for t in range(max_new_tokens):
         output, h_t = rnn(x_t, h_t)
-        probs = torch.nn.functional.softmax(output[-1,:], dim=-1)
-        
+        probs = torch.nn.functional.softmax(output[-1, :], dim=-1)
+
         sorted_probs, sorted_indices = torch.sort(probs, descending=True)
 
         cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
@@ -268,7 +269,7 @@ def estimate_metrics():
                 config['batch_size'] * config['seq_length'], K))
             losses[k] = loss.item()
             labels = torch.argmax(Y, dim=2)
-            
+
             perplexity_metric.update(output.view(
                 config['batch_size'], config['seq_length'], K), labels)
         out[split] = losses.mean().item()
@@ -311,6 +312,9 @@ def get_batch(split):
             X[batch, t, x] = 1
             Y[batch, t, y] = 1
 
+    X.to(device)
+    Y.to(device)
+
     return X, Y
 
 
@@ -338,7 +342,8 @@ if config['tokenizer'] == 'vec':
     K = data.shape[0]
     n = int(data.shape[1] * config['train_size'])
     train_data = data[:, :n]
-    val_data = data[:, :n] # TODO: Vi läser in validation data annorlunda nu. Se load_data
+    # TODO: Vi läser in validation data annorlunda nu. Se load_data
+    val_data = data[:, :n]
 else:
     train_data, vocab, val_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
@@ -346,7 +351,7 @@ else:
 
 output_size = len(vocab.keys())
 if config['tokenizer'] == 'vec':
-    num_words = train_data.shape[1] # TODO: Lös fallet med Word2Vec
+    num_words = train_data.shape[1]  # TODO: Lös fallet med Word2Vec
 else:
     num_words = len(train_data)
 
@@ -368,7 +373,7 @@ else:
 model_loaded, train_loss_values, val_loss_values, train_perplexity, val_perplexity = load_model(
     PATH)
 
-#model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = False, [], [], [], []
+# model_loaded, train_loss_values, val_loss_values , train_perplexity, val_perplexity = False, [], [], [], []
 if (not model_loaded):
     while True:
         hidden = model.initHidden(config['batch_size'])
@@ -401,7 +406,8 @@ if (not model_loaded):
                 val_loss_values.append(losses['val'])
                 train_perplexity.append(perplexity['train'])
                 val_perplexity.append(perplexity['val'])
-                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+                print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+                      losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
 
             if iteration % config['syntesize_every'] == 0:
                 x0 = get_batch("train")[0][0].unsqueeze(0)
@@ -429,7 +435,8 @@ if (not model_loaded):
     val_loss_values.append(losses['val'])
     train_perplexity.append(perplexity['train'])
     val_perplexity.append(perplexity['val'])
-    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
+    print(f"step {iteration}: train loss {losses['train']:.4f}, val loss {
+          losses['val']:.4f}, train perplexity {perplexity['train']:.4f}, val perplexity {perplexity['val']:.4f}")
     save_model(PATH, train_loss_values, val_loss_values,
                train_perplexity, val_perplexity)
 

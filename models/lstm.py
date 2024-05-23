@@ -269,6 +269,9 @@ def get_batch(split):
             X[batch, t, x] = 1
             Y[batch, t, y] = 1
 
+    X.to(device)
+    Y.to(device)
+
     return X, Y
 
 
