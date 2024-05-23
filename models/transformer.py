@@ -42,8 +42,8 @@ def get_batch(split):
 
 def load_data(tokenizer):
     data = torch.tensor(
-        np.load(f"token_data/text_{tokenizer}.npy"), dtype=torch.long)
-    with open(f"token_data/vocabulary_{tokenizer}.pkl", "rb") as f:
+        np.load(f"token_data/train_{tokenizer}.npy"), dtype=torch.long)
+    with open(f"token_data/train_vocabulary_{tokenizer}.pkl", "rb") as f:
         vocab = pickle.load(f)
     return data, vocab
 
@@ -70,7 +70,7 @@ def estimate_metrics():
             X, Y = get_batch(split)
             outputs, loss = model(X, Y)
             losses[k] = loss.item()
-            perplexity_metric.update(outputs.unsqueeze(0), Y)
+            perplexity_metric.update(outputs.unsqueeze(0), Y.view(1, config['batch_size'] * config['seq_length']))
         out[split] = losses.mean().item()
         perplexity[split] = perplexity_metric.compute().item()
     model.train()
@@ -335,8 +335,7 @@ print(sample)
 with open (f"{PATH}/text_sample.txt", "w") as file:
     file.write(sample)
 
-with open('./data/goblet_book.txt', 'r', encoding='utf-8') as f:
-    text = f.read()
+
 spell_checker = SpellChecker()
 spelling_accuracy = evaluate_spelling(spell_checker, sample)
 with open (f"{PATH}/spelling_accuracy.txt", "w") as file:
