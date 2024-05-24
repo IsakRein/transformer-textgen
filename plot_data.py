@@ -49,6 +49,9 @@ val_perplexity_rnn_char_baseline = torch.load('model_data/rnn_char_baseline/val_
 
 val_loss_transformer_char_test_embed_128 = torch.load('model_data/transformer_char_test_embed_128/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_256 = torch.load('model_data/transformer_char_test_embed_256/val_losses.pth')[:11]
+val_loss_transformer_char_test_embed_512 = torch.load('model_data/transformer_char_test_embed_512/val_losses.pth')[:11]
+val_loss_transformer_char_test_embed_512_seq_32 = torch.load('model_data/transformer_char_test_embed_512_seq_32/val_losses.pth')[:11]
+val_loss_transformer_char_test_embed_512_seq_128 = torch.load('model_data/transformer_char_test_embed_512_seq_128/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_512_seq_128_4_layers = torch.load('model_data/transformer_char_test_embed_512_seq_128_4_layers/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_512_seq_128_10_layers = torch.load('model_data/transformer_char_test_embed_512_seq_128_10_layers/val_losses.pth')[:11]
 
@@ -123,23 +126,36 @@ x_values = range(0,len(val_loss_transformer_char_test_embed_128) * 1000, 1000)
 plt.title("Validation loss vs update iteration")
 plt.plot(x_values, val_loss_transformer_char_test_embed_128, label="n_embed = 128")
 plt.plot(x_values, val_loss_transformer_char_test_embed_256, label="n_embed = 256")
+plt.plot(x_values, val_loss_transformer_char_test_embed_512, label="n_embed = 512")
+plt.yscale('log')
+plt.xlabel("Iteration")
+plt.ylabel("loss")
+plt.legend()
+plt.savefig("images/transformer_n_embed")
+plt.clf()
+
+x_values = range(0,len(val_loss_transformer_char_test_embed_128) * 1000, 1000)
+plt.title("Validation loss vs update iteration")
+plt.plot(x_values, val_loss_transformer_char_test_embed_512_seq_32, label="n_embed = 512, seq_length=32")
+plt.plot(x_values, val_loss_transformer_char_test_embed_512, label="n_embed = 512, seq_length=64")
+plt.plot(x_values, val_loss_transformer_char_test_embed_512_seq_128, label="n_embed = 512, seq_length=128")
 
 plt.yscale('log')
 plt.xlabel("Iteration")
 plt.ylabel("loss")
 plt.legend()
-plt.savefig("images/n_embed")
+plt.savefig("images/transformer_n_embed_vs_seq")
 plt.clf()
 
 
 x_values = range(0,len(val_loss_transformer_char_test_embed_128) * 1000, 1000)
 plt.title("Validation loss vs update iteration")
 plt.plot(x_values, val_loss_transformer_char_test_embed_512_seq_128_4_layers, label="n_embed=512,seq_length=128,layers=4")
+plt.plot(x_values, val_loss_transformer_char_test_embed_512_seq_128, label="n_embed = 512, seq_length=128, layers = 6")
 plt.plot(x_values, val_loss_transformer_char_test_embed_512_seq_128_10_layers, label="n_embed=512,seq_length=128,layers=10")
-
 plt.yscale('log')
 plt.xlabel("Iteration")
 plt.ylabel("loss")
 plt.legend()
-plt.savefig("images/n_embed_layers")
+plt.savefig("images/transformer_layer_comp")
 plt.clf()
