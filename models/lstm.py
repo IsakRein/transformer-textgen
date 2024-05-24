@@ -93,7 +93,9 @@ def load_data(tokenizer):
         vocab = pickle.load(f)
     val_data = torch.tensor(
         np.load(f"token_data/validation_{tokenizer}.npy"), dtype=torch.long, device=device)
-    return data, vocab, val_data
+    test_data = torch.tensor(np.load(
+        f"token_data/test_{tokenizer}.npy"), dtype=torch.long, device=device)
+    return data, vocab, val_data, test_data
 
 
 def load_word2vec():
@@ -248,7 +250,14 @@ def visualize_tokens(token_indices, vocab):
 
 
 def get_batch(split):
-    data = train_data if split == 'train' else val_data
+    if split == 'train':
+        data = train_data 
+    elif split == 'val':
+        data = val_data 
+    elif split == 'test':
+        data = test_data
+    else:
+        raise ValueError('split has an invalid value')
 
     X = torch.zeros(
         (config['batch_size'], config['seq_length'], K), dtype=torch.float, device=device)
@@ -286,11 +295,28 @@ def evaluate_spelling(spell_checker, generated_text):
         correctly_spelled_words / total_words) * 100
     return correctly_spelled_percentage
 
+@torch.no_grad()
+def test_model():
+    model.eval()
+    split = 'test'
+    losses = torch.zeros(config['eval_iters'], device=device)
+    hidden, cell = model.initHidden(config['batch_size'])
+    
+    for k in range(config['eval_iters']):
+        X, Y = get_batch(split)
+        output, hidden, cell = model(X, hidden, cell)
+        loss = criterion(
+                output.view(config['batch_size'] * config['seq_length'], K),
+                Y.view(config['batch_size'] * config['seq_length'], K))
+        losses[k] = loss.item()
+    return losses.mean().item()
 
 def load_model(PATH):
     if (os.path.exists(PATH)):
         print("Loading model")
         model.load_state_dict(torch.load(f"{PATH}/model.pth"))
+        test_loss = test_model()
+        print("test_loss", test_loss)
         train_loss_values = torch.load(f"{PATH}/train_losses.pth")
         val_loss_values = torch.load(f"{PATH}/val_losses.pth")
         train_perplexity = torch.load(f"{PATH}/train_perplexity.pth")
@@ -373,7 +399,7 @@ if config['tokenizer'] == 'vec':
     val_data = data[:, :n]
     val_data = torch.from_numpy(val_data).to(torch.float).to(device)
 else:
-    train_data, vocab, val_data = load_data(config['tokenizer'])
+    train_data, vocab, val_data, test_data = load_data(config['tokenizer'])
     K = len(vocab.keys())
     n = int(len(train_data) * config['train_size'])
 

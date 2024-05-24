@@ -30,7 +30,14 @@ class TextProcessor:
 
 
 def get_batch(split):
-    data = train_data if split == 'train' else val_data
+    if split == 'train':
+        data = train_data
+    elif split == 'val':
+        data = val_data
+    elif split == 'test':
+        data = test_data
+    else:
+        raise ValueError('split has an invalid value')
     idx = torch.randint(
         len(data) - config['seq_length'], (config['batch_size'],), device=device)
     X_batch = torch.stack([data[j:j+config['seq_length']] for j in idx])
@@ -47,7 +54,9 @@ def load_data(tokenizer):
         vocab = pickle.load(f)
     val_data = torch.tensor(np.load(
         f"token_data/validation_{tokenizer}.npy"), dtype=torch.long, device=device)
-    return data, vocab, val_data
+    test_data = torch.tensor(np.load(
+        f"token_data/test_{tokenizer}.npy"), dtype=torch.long, device=device)
+    return data, vocab, val_data, test_data
 
 
 def decode(ids, vocab):
@@ -243,12 +252,24 @@ class DecoderOnlyTransformer(nn.Module):
             tokens = torch.cat((tokens, sorted_indices[0][next_token]), dim=1)
         return tokens
 
+@torch.no_grad()
+def test_model():
+    model.eval()
+    split = 'test'
+    losses = torch.zeros(config['eval_iters'], device=device)
+    for k in range(config['eval_iters']):
+        X, Y = get_batch(split)
+        _, loss = model(X, Y)
+        losses[k] = loss.item()
+    return losses.mean().item()
 
 def load_model(PATH):
     if (os.path.exists(PATH)):
         print("Loading model")
         model.load_state_dict(torch.load(
             f"{PATH}/model.pth", map_location=device))
+        test_loss = test_model()
+        print("test_loss", test_loss)
         train_loss_values = torch.load(
             f"{PATH}/train_losses.pth", map_location=device)
         val_loss_values = torch.load(
@@ -279,7 +300,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 with open(sys.argv[1], 'r') as f:
     config = json.load(f)
 
-train_data, vocab, val_data = load_data(config['tokenizer'])
+train_data, vocab, val_data, test_data = load_data(config['tokenizer'])
 
 # Initialize model and optimizer
 model = DecoderOnlyTransformer(len(vocab)).to(device)
