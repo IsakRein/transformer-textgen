@@ -188,14 +188,20 @@ def visualize_tokens(token_indices, vocab):
 def load_model(PATH):
     if os.path.exists(PATH):
         print("Loading model")
-        model.load_state_dict(torch.load(f"{PATH}/model.pth"))
-        train_loss_values = torch.load(f"{PATH}/train_losses.pth")
-        val_loss_values = torch.load(f"{PATH}/val_losses.pth")
-        train_perplexity = torch.load(f"{PATH}/train_perplexity.pth")
-        val_perplexity = torch.load(f"{PATH}/val_perplexity.pth")
+        model.load_state_dict(torch.load(
+            f"{PATH}/model.pth", map_location=torch.device(device)))
+        train_loss_values = torch.load(
+            f"{PATH}/train_losses.pth", map_location=torch.device(device))
+        val_loss_values = torch.load(
+            f"{PATH}/val_losses.pth", map_location=torch.device(device))
+        train_perplexity = torch.load(
+            f"{PATH}/train_perplexity.pth", map_location=torch.device(device))
+        val_perplexity = torch.load(
+            f"{PATH}/val_perplexity.pth", map_location=torch.device(device))
         return True, train_loss_values, val_loss_values, train_perplexity, val_perplexity
     else:
         return False, [], [], [], []
+
 
 
 def save_model(PATH, train_loss_values, val_loss_values, train_perplexity, val_perplexity):
@@ -298,6 +304,8 @@ def evaluate_spelling(spell_checker, generated_text):
 # Set seed
 torch.manual_seed(0)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+print(device)
 
 # Initialize data
 with open(sys.argv[1], 'r') as f:
