@@ -3,7 +3,7 @@
   "tokenizer": "char",
   "batch_size": 32,
   "seq_length": 128,
-  "n_iters": 25000,
+  "n_iters": 10000,
   "learning_rate": 0.001,
   "n_embd": 512,
   "n_head": 8,
