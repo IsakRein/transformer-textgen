@@ -46,6 +46,11 @@ val_loss_rnn_char_baseline = torch.load('model_data/rnn_char_baseline/val_losses
 val_perplexity_rnn_char_baseline = torch.load('model_data/rnn_char_baseline/val_perplexity.pth')[:26]
 
 
+
+val_loss_transformer_char_test_embed_128 = torch.load('model_data/transformer_char_test_embed_128/val_losses.pth')[:26]
+val_loss_transformer_char_test_embed_512_seq_128 = torch.load('model_data/transformer_char_test_embed_512_seq_128/val_losses.pth')[:26]
+val_loss_transformer_char_test_embed_512_seq_128 = torch.load('model_data/transformer_char_test_embed_512_seq_128/val_losses.pth')[:26]
+
 x_values = range(0,len(val_loss_lstm_char_128_hidden) * 1000, 1000)
 plt.title("Validation loss vs update iteration")
 plt.plot(x_values, val_loss_lstm_char_128_hidden, label="128x1")
