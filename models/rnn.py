@@ -424,7 +424,7 @@ if config['sampling'] == "temp":
             model, hprev, x0, 200, vocab, word2vec_model)
         print("".join(generated_text))
     else:
-        Y_synth = synthesize(model, hprev, x0, 200)
+        Y_synth = synthesize(model, hprev, x0, n=config['max_new_tokens'])
         sample = [torch.argmax(y).item() for y in Y_synth]
         sample = decode(sample, vocab)
 
