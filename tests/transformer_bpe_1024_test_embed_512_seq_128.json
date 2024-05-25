@@ -1,0 +1,21 @@
+{
+    "model": "transformer",
+    "tokenizer": "bpe_1024",
+    "batch_size": 32,
+    "seq_length": 128,
+    "n_iters": 25000,
+    "learning_rate": 0.001,
+    "n_embd": 512,
+    "n_head": 8,
+    "n_layer": 6,
+    "dropout": 0.1,
+    "feed_forward_multiplier": 4,
+    "max_new_tokens": 1000,
+    "eval_iters": 100,
+    "log_every": 1000,
+    "syntesize_every": 10000,
+    "lambda": 0.001,
+    "sampling": "temp",
+    "temperature": 1,
+    "nucleus": 0.5
+  }
