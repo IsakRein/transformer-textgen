@@ -1,0 +1,22 @@
+{
+  "model": "lstm",
+  "tokenizer": "char",
+  "m": 512,
+  "learning_rate": 0.01,
+  "seq_length": 32,
+  "batch_size": 16,
+  "gradient_clip": 5,
+  "num_layers": 2,
+  "train_size": 0.8,
+  "val_size": 0.1,
+  "test_size": 0.1,
+  "smooth_loss_factor": 0.999,
+  "n_iters": 50000,
+  "log_every": 1000,
+  "synthesize_every": 10000,
+  "eval_iters":  100,
+  "sampling": "temp",
+  "temperature": 1,
+  "nucleus": 0.9,
+  "max_new_tokens": 1000
+}
