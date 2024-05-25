@@ -173,6 +173,4 @@ pyvenv.cfg
 *.npy
 *.pkl
 *.model
-model_data/transformer_char_test_embed_128/model.pth
-model_data/transformer_char_test_embed_256/model.pth
-model_data/transformer_char_test_embed_512_8_heads/model.pth
+model_data/*/model.pth

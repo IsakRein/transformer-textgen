@@ -21,8 +21,8 @@ val_loss_transformer_char_test_embed_256 = torch.load(
     'model_data/transformer_char_test_embed_256/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_512 = torch.load(
     'model_data/transformer_char_test_embed_512/val_losses.pth')[:11]
-val_loss_transformer_char_test_embed_512_8_heads = torch.load(
-    'model_data/transformer_char_test_embed_512_8_heads/val_losses.pth')[:11]
+# val_loss_transformer_char_test_embed_512_8_heads = torch.load(
+#     'model_data/transformer_char_test_embed_512_8_heads/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_512_seq_128 = torch.load(
     'model_data/transformer_char_test_embed_512_seq_128/val_losses.pth')[:11]
 val_loss_transformer_char_test_embed_512_seq_128_4_layers = torch.load(
@@ -34,7 +34,10 @@ val_loss_transformer_char_test_embed_512_seq_128_10_layers = torch.load(
 print(val_loss_transformer_char_test_embed_128[10])
 print(val_loss_transformer_char_test_embed_256[10])
 print(val_loss_transformer_char_test_embed_512[10])
-print(val_loss_transformer_char_test_embed_512_8_heads[10])
+# print(val_loss_transformer_char_test_embed_512_8_heads[10])
 print(val_loss_transformer_char_test_embed_512_seq_128[10])
 print(val_loss_transformer_char_test_embed_512_seq_128_4_layers[10])
 print(val_loss_transformer_char_test_embed_512_seq_128_10_layers[10])
+
+print(val_loss_transformer_char_test_embed_512_seq_128)
+print(val_loss_transformer_char_test_embed_512_seq_128_10_layers)
