@@ -12,7 +12,7 @@
   "train_size": 0.9, 
   "eval_iters": 100,
   "sampling": "temp",
-  "temperature": 0.9,
+  "temperature": 1,
   "nucleus": 0.5,
-  "max_new_tokens": 512
+  "max_new_tokens": 1000
 }

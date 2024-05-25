@@ -16,6 +16,6 @@
   "syntesize_every": 10000,
   "lambda": 0.001,
   "sampling": "temp",
-  "temperature": 0.9,
+  "temperature": 1,
   "nucleus": 0.5
 }
