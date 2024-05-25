@@ -173,4 +173,4 @@ pyvenv.cfg
 *.npy
 *.pkl
 *.model
-model_data/*/model.pth
+**/model.pth
